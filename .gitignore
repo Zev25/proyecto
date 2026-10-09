@@ -1,0 +1,33 @@
+# Dependencias y artefactos generados
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+coverage/
+
+# Configuracion y secretos locales
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# Logs y archivos temporales
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+.cache/
+*.local
+
+# Archivos subidos durante la ejecucion
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Sistema operativo y editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Los archivos Markdown, OpenSpec y lockfiles se conservan en el repositorio.

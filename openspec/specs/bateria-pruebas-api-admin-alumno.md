@@ -269,6 +269,77 @@ curl -X POST "$BASE_URL/alumno/invitaciones/canjear" \
 - HTTP 404 para codigo inexistente
 - HTTP 410 para codigo expirado
 
+## 17) Crear evaluacion desde el editor del profesor
+- Crear la evaluacion desde la interfaz docente; no se requiere subir ni crear un archivo.
+- El editor envia titulo, curso/materia, `preguntasPorIntento` y el banco al endpoint `POST /profesor/evaluaciones`.
+- Validar banco de 1 a 50 preguntas; 51 debe responder HTTP 400.
+- `preguntasPorIntento` debe aceptar enteros de 1 a 50; valores 0, negativos o mayores de 50 deben responder HTTP 400.
+- Confirmar que el registro queda en `Evaluacion` y sus preguntas en `Pregunta`.
+
+Ejemplo de body minimo con sorteo de una pregunta:
+```json
+{
+  "titulo": "Frontend basico",
+  "curso": "frontend",
+  "preguntasPorIntento": 1,
+  "preguntas": [
+    {"enunciado": "Pregunta 1", "opciones": ["A", "B"], "respuestaCorrecta": "A", "puntos": 1}
+  ]
+}
+```
+
+## 18) Alumno inicia intento aleatorio
+
+### Listar evaluaciones disponibles
+```bash
+curl "$BASE_URL/alumno/evaluaciones?usuario=ana.multi" \
+  -H "x-user-role: alumno" \
+  -H "x-user-name: ana.multi"
+```
+
+### Esperado
+- HTTP 200
+- Solo devuelve evaluaciones de los cursos asignados.
+- Devuelve metadatos; no incluye preguntas ni respuestas correctas.
+
+### Iniciar intento
+```bash
+curl -X POST "$BASE_URL/alumno/evaluaciones/ID_EVALUACION/intentos" \
+  -H "x-user-role: alumno" \
+  -H "x-user-name: ana.multi"
+```
+
+### Esperado
+- HTTP 201
+- Devuelve `intentoId` y exactamente `preguntas_por_intento` preguntas distintas sin respuesta correcta.
+- `IntentoPregunta` conserva los IDs y el orden exacto del sorteo para ese intento.
+- Si el banco tiene menos preguntas que `preguntasPorIntento`: HTTP 409 y no se crea un intento.
+
+## 19) Alumno envia las respuestas del intento
+
+### Request
+```bash
+curl -X POST "$BASE_URL/alumno/evaluaciones/ID_EVALUACION/responder" \
+  -H "Content-Type: application/json" \
+  -H "x-user-role: alumno" \
+  -H "x-user-name: ana.multi" \
+  -d '{
+    "intentoId": 123,
+    "respuestas": [
+      {"preguntaId": 456, "respuesta": "A"},
+      {"preguntaId": 789, "respuesta": "B"}
+    ]
+  }'
+```
+
+Reemplaza `123` por el `intentoId` recibido y los IDs del array por todas las preguntas devueltas al iniciar ese intento.
+
+### Esperado
+- HTTP 200, `notaTotal` calculada y respuestas asociadas al intento.
+- HTTP 400 con respuestas faltantes, duplicadas, mal formadas o ajenas a la seleccion.
+- HTTP 409 si el mismo intento ya fue enviado.
+- GET `/alumno/intentos` muestra el intento y su nota solo para el alumno solicitante.
+
 ## Pendiente de pruebas QR
 - Definir casos de prueba para canje por QR (scanner y link de canje).
 - Validar equivalencia funcional entre canje por codigo numerico y canje por QR.

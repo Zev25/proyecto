@@ -49,7 +49,7 @@
               </q-list>
             </q-btn-dropdown>
             <q-btn v-if="activeSection === 'tareas'" color="primary" icon="assignment_add" label="Crear tarea" @click="taskDialogOpen = true" />
-            <q-btn v-if="activeSection === 'evaluaciones'" outline color="primary" icon="quiz" label="Crear evaluación" @click="evaluationDialogOpen = true" />
+            <q-btn v-if="activeSection === 'evaluaciones'" outline color="primary" icon="quiz" label="Nueva evaluación" @click="evaluationDialogOpen = true" />
           </div>
         </q-card-section>
       </q-card>
@@ -191,31 +191,50 @@
       <q-card v-if="activeSection === 'evaluaciones'" flat bordered class="teacher-section">
         <q-card-section class="row items-center justify-between q-col-gutter-md">
           <div>
-            <p class="teacher-section__kicker">Evaluaciones</p>
-            <h3>Editor de evaluaciones</h3>
+            <p class="teacher-section__kicker">Evaluaciones del profesor</p>
+            <h3>Evaluaciones creadas</h3>
           </div>
-          <div class="teacher-actions-inline">
-            <q-chip color="blue-1" text-color="primary" icon="help_outline">
-              {{ evalForm.preguntas.length }}/10 preguntas
-            </q-chip>
-            <q-btn outline color="primary" icon="open_in_new" label="Abrir editor" @click="evaluationDialogOpen = true" />
-          </div>
+          <q-btn flat color="primary" icon="refresh" label="Actualizar" :loading="props.cargandoEvaluacionesProfesor" @click="emit('cargar-evaluaciones')" />
         </q-card-section>
 
-        <q-card-section class="teacher-summary-grid">
-          <div class="teacher-summary-item teacher-summary-item--wide">
-            <span>Título actual</span>
-            <strong>{{ evalForm.titulo || 'Sin título' }}</strong>
-          </div>
-          <div class="teacher-summary-item">
-            <span>Clase</span>
-            <strong>{{ classOptions.find((option) => option.value === evalForm.clase)?.label || 'Sin clase' }}</strong>
-          </div>
-          <div class="teacher-summary-item">
-            <span>Pregunta visible</span>
-            <strong>{{ currentQuestionLabel }}</strong>
-          </div>
-        </q-card-section>
+        <q-table
+          flat
+          dense
+          row-key="id"
+          :rows="props.evaluacionesProfesor"
+          :columns="evaluationColumns"
+          :loading="props.cargandoEvaluacionesProfesor"
+          :pagination="{ rowsPerPage: 0 }"
+          hide-pagination
+          class="teacher-evaluation-table"
+        >
+          <template #body-cell-created_at="slotProps">
+            <q-td :props="slotProps">{{ formatDateTime(slotProps.row.created_at) }}</q-td>
+          </template>
+          <template #body-cell-fecha_fin="slotProps">
+            <q-td :props="slotProps">{{ formatDateOnly(slotProps.row.fecha_fin) }}</q-td>
+          </template>
+          <template #body-cell-acciones="slotProps">
+            <q-td :props="slotProps" class="text-right">
+              <q-btn
+                flat
+                dense
+                color="primary"
+                icon="edit"
+                label="Editar"
+                :disable="Number(slotProps.row.intentos) > 0 || props.guardandoEvaluacion"
+                @click="emit('editar-evaluacion', slotProps.row.id)"
+              >
+                <q-tooltip v-if="Number(slotProps.row.intentos) > 0">No se puede editar porque ya tiene intentos</q-tooltip>
+              </q-btn>
+            </q-td>
+          </template>
+          <template #no-data>
+            <div class="full-width row flex-center q-pa-lg text-grey-7">
+              {{ props.cargandoEvaluacionesProfesor ? 'Cargando evaluaciones...' : 'Todavía no has creado evaluaciones.' }}
+            </div>
+          </template>
+        </q-table>
       </q-card>
 
       <section v-if="activeSection === 'alumnos'" class="teacher-grid teacher-grid--bottom">
@@ -305,14 +324,75 @@
         <q-card-section class="row items-center justify-between q-pb-none">
           <div>
             <p class="teacher-section__kicker">Evaluaciones</p>
-            <h3>Crear evaluación en ventana flotante</h3>
+            <h3>{{ props.evaluacionEnEdicionId ? 'Editar evaluación' : 'Crear evaluación' }} en ventana flotante</h3>
           </div>
-          <q-btn flat round icon="close" @click="evaluationDialogOpen = false" />
+          <q-btn flat round icon="close" :disable="props.guardandoEvaluacion" @click="cerrarEditorEvaluacion" />
         </q-card-section>
 
         <q-card-section class="teacher-form-grid">
-          <q-input v-model="evalForm.titulo" outlined label="Título" />
-          <q-select v-model="evalForm.clase" outlined label="Clase / materia" :options="classOptions" option-label="label" option-value="value" emit-value map-options @update:model-value="actualizarClaseEvaluacion" />
+          <q-input v-model="evalForm.titulo" outlined label="Título" @update:model-value="limpiarMensajeImportacion" />
+          <q-select v-model="evalForm.clase" outlined label="Clase / materia" :options="classOptions" option-label="label" option-value="value" emit-value map-options @update:model-value="handleEvaluationClassUpdate" />
+          <q-input
+            v-model.number="evalForm.preguntasPorIntento"
+            outlined
+            type="number"
+            min="1"
+            max="50"
+            label="Preguntas por intento"
+            :hint="`Banco actual: ${evalForm.preguntas.length} preguntas. El sorteo no puede superar el banco.`"
+            :error="cantidadPorIntentoSuperaBanco"
+            :error-message="`El banco tiene ${evalForm.preguntas.length} preguntas; reduce el sorteo o agrega más preguntas.`"
+            @update:model-value="limpiarMensajeImportacion"
+          />
+          <q-input v-model="evalForm.fechaFin" outlined type="date" label="Fecha de fin (opcional)" />
+        </q-card-section>
+
+        <q-card-section class="q-pt-none">
+          <div class="row items-center q-col-gutter-md">
+            <div class="col-12 col-md-8">
+              <q-file
+                v-model="excelFile"
+                outlined
+                dense
+                clearable
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                label="Banco de preguntas (.xlsx)"
+                :disable="props.importandoExcel"
+                @update:model-value="handleExcelFileUpdate"
+              >
+                <template #prepend><q-icon name="upload_file" /></template>
+              </q-file>
+            </div>
+            <div class="col-12 col-md-4">
+              <q-btn
+                class="full-width"
+                outline
+                color="primary"
+                icon="upload_file"
+                label="Cargar preguntas"
+                :disable="!canImportExcel"
+                :loading="props.importandoExcel"
+                @click="handleImportEvaluationExcel"
+              />
+            </div>
+            <p class="teacher-copy col-12 q-mb-none">
+              Encabezados: Enunciado, Tipo, Opciones, Respuesta correcta y Puntos. Separa opciones con | o usa un arreglo JSON; deja Opciones vacía para preguntas abiertas. La carga solo llena el editor: la evaluación se guarda al pulsar “Guardar evaluación”.
+            </p>
+            <div class="col-12">
+              <q-banner
+                dense
+                rounded
+                role="status"
+                class="teacher-import-feedback"
+                :class="`teacher-import-feedback--${estadoMensajeImportacion}`"
+              >
+                <template #avatar>
+                  <q-icon :name="iconoMensajeImportacion" />
+                </template>
+                {{ mensajeVisibleImportacion }}
+              </q-banner>
+            </div>
+          </div>
         </q-card-section>
 
         <q-card-section class="teacher-stepper-head">
@@ -380,9 +460,9 @@
         </q-card-section>
 
         <q-card-actions align="right" class="q-pa-md">
-          <q-btn flat color="primary" label="Cancelar" @click="evaluationDialogOpen = false" />
-          <q-btn outline color="primary" icon="add" label="Nueva pregunta" :disable="evalForm.preguntas.length >= 10 || !isCurrentQuestionReady" @click="createAndGoToNextQuestion" />
-          <q-btn color="primary" icon="save" label="Guardar evaluación" :disable="!canSaveEvaluation" @click="handleCreateEvaluation" />
+          <q-btn flat color="primary" label="Cancelar" :disable="props.guardandoEvaluacion" @click="cerrarEditorEvaluacion" />
+          <q-btn outline color="primary" icon="add" label="Nueva pregunta" :disable="evalForm.preguntas.length >= 50 || !isCurrentQuestionReady" @click="createAndGoToNextQuestion" />
+          <q-btn color="primary" icon="save" :label="props.evaluacionEnEdicionId ? 'Guardar cambios' : 'Guardar evaluación'" :disable="!canSaveEvaluation || props.guardandoEvaluacion" :loading="props.guardandoEvaluacion" @click="handleCreateEvaluation" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -390,18 +470,29 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { courseOfferings } from '../../data/courseOfferings.js'
 
 const props = defineProps({
   evalForm: { type: Object, required: true },
-  tareaForm: { type: Object, required: true }
+  tareaForm: { type: Object, required: true },
+  evaluacionesProfesor: { type: Array, default: () => [] },
+  cargandoEvaluacionesProfesor: { type: Boolean, default: false },
+  evaluacionEnEdicionId: { type: Number, default: null },
+  guardandoEvaluacion: { type: Boolean, default: false },
+  evaluacionesGuardadas: { type: Number, default: 0 },
+  importandoExcel: { type: Boolean, default: false },
+  importacionesExcelCompletadas: { type: Number, default: 0 },
+  mensajeImportacionExcel: { type: String, default: '' },
+  estadoImportacionExcel: { type: String, default: 'info' }
 })
 
-const emit = defineEmits(['agregar-pregunta', 'crear-evaluacion', 'crear-tarea'])
+const emit = defineEmits(['agregar-pregunta', 'crear-evaluacion', 'importar-evaluacion-excel', 'limpiar-importacion-excel', 'cargar-evaluaciones', 'editar-evaluacion', 'cancelar-edicion-evaluacion', 'crear-tarea'])
 
 const taskDialogOpen = ref(false)
 const evaluationDialogOpen = ref(false)
+const excelFile = ref(null)
+const preguntasDesdeExcel = ref(false)
 const currentQuestionIndex = ref(0)
 const currentQuestionStep = ref(1)
 const activeSection = ref('dashboard')
@@ -415,6 +506,28 @@ const navItems = [
   { key: 'evaluaciones', label: 'Evaluaciones', icon: 'quiz' },
   { key: 'resultados', label: 'Resultados', icon: 'insights' }
 ]
+
+const evaluationColumns = [
+  { name: 'titulo', label: 'Evaluación', field: 'titulo', align: 'left', sortable: true },
+  { name: 'curso', label: 'Curso', field: 'curso', align: 'left', sortable: true },
+  { name: 'created_at', label: 'Fecha de creación', field: 'created_at', align: 'left', sortable: true },
+  { name: 'fecha_fin', label: 'Fecha de fin', field: 'fecha_fin', align: 'left', sortable: true },
+  { name: 'intentos', label: 'Intentos', field: 'intentos', align: 'right', sortable: true },
+  { name: 'acciones', label: '', field: 'id', align: 'right' }
+]
+
+const formatDateTime = (value) => {
+  if (!value) return 'Sin fecha'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('es')
+}
+
+const formatDateOnly = (value) => {
+  if (!value) return 'Sin fecha'
+  const [year, month, day] = String(value).slice(0, 10).split('-').map(Number)
+  const date = new Date(year, month - 1, day)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('es')
+}
 
 const courseOptions = [
   ...courseOfferings.map((offering) => ({
@@ -474,6 +587,22 @@ const selectedCourseLabel = computed(() => selectedCourse.value === 'todos'
 
 const currentSectionMeta = computed(() => sectionMeta[activeSection.value])
 
+watch(activeSection, (section) => {
+  if (section === 'evaluaciones') emit('cargar-evaluaciones')
+})
+
+watch(() => props.evaluacionEnEdicionId, (evaluacionId) => {
+  if (evaluacionId !== null) evaluationDialogOpen.value = true
+})
+
+watch(() => props.evaluacionesGuardadas, (guardadas, anteriores) => {
+  if (guardadas > anteriores) {
+    evaluationDialogOpen.value = false
+    currentQuestionIndex.value = 0
+    currentQuestionStep.value = 1
+  }
+})
+
 const actualizarClaseTarea = (claseKey) => {
   const clase = classOptions.value.find((option) => option.value === claseKey)
   if (clase) props.tareaForm.curso = clase.legacyCourse
@@ -482,6 +611,11 @@ const actualizarClaseTarea = (claseKey) => {
 const actualizarClaseEvaluacion = (claseKey) => {
   const clase = classOptions.value.find((option) => option.value === claseKey)
   if (clase) props.evalForm.curso = clase.legacyCourse
+}
+
+const handleEvaluationClassUpdate = (claseKey) => {
+  actualizarClaseEvaluacion(claseKey)
+  limpiarMensajeImportacion()
 }
 
 const seleccionarOferta = (offeringId) => {
@@ -625,17 +759,80 @@ const isCurrentQuestionReady = computed(() => {
     && Number(currentQuestion.value.puntos || 0) > 0
 })
 
+const preguntasBancoValidas = computed(() => props.evalForm.preguntas.length > 0
+  && props.evalForm.preguntas.every((pregunta) => (
+    pregunta.enunciado?.trim()
+    && pregunta.opciones.every((opcion) => opcion && opcion.trim())
+    && pregunta.respuestaCorrecta?.trim()
+    && Number(pregunta.puntos || 0) > 0
+  )))
+
+const cantidadPorIntentoSuperaBanco = computed(() => preguntasBancoValidas.value
+  && Number(props.evalForm.preguntasPorIntento) > props.evalForm.preguntas.length)
+
 const canSaveEvaluation = computed(() => {
   return Boolean(props.evalForm.titulo?.trim())
     && Boolean(props.evalForm.curso)
-    && props.evalForm.preguntas.length > 0
-    && props.evalForm.preguntas.every((pregunta) => {
-      return pregunta.enunciado?.trim()
-        && pregunta.opciones.every((opcion) => opcion && opcion.trim())
-        && pregunta.respuestaCorrecta?.trim()
-        && Number(pregunta.puntos || 0) > 0
-    })
+    && Number.isInteger(Number(props.evalForm.preguntasPorIntento))
+    && Number(props.evalForm.preguntasPorIntento) >= 1
+    && Number(props.evalForm.preguntasPorIntento) <= 50
+    && Number(props.evalForm.preguntasPorIntento) <= props.evalForm.preguntas.length
+    && preguntasBancoValidas.value
 })
+
+const canImportExcel = computed(() => Boolean(excelFile.value) && !props.importandoExcel)
+
+const camposPendientesImportacion = computed(() => {
+  const pendientes = []
+  if (!props.evalForm.titulo?.trim()) pendientes.push('un título')
+  if (!props.evalForm.curso) pendientes.push('un curso o clase')
+  const cantidad = Number(props.evalForm.preguntasPorIntento)
+  if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 50) pendientes.push('una cantidad por intento entre 1 y 50')
+  return pendientes
+})
+
+const estadoMensajeImportacion = computed(() => {
+  if (props.importandoExcel) return 'info'
+  if (props.mensajeImportacionExcel) return props.estadoImportacionExcel
+  if (preguntasDesdeExcel.value) return camposPendientesImportacion.value.length > 0 ? 'warning' : 'success'
+  return excelFile.value ? 'info' : 'warning'
+})
+
+const mensajeVisibleImportacion = computed(() => {
+  if (props.importandoExcel) return props.mensajeImportacionExcel || 'Subiendo y validando el archivo Excel...'
+  if (props.mensajeImportacionExcel) return props.mensajeImportacionExcel
+  if (preguntasDesdeExcel.value) {
+    const total = props.evalForm.preguntas.length
+    if (camposPendientesImportacion.value.length > 0) {
+      return `${total} preguntas listas para revisar. Antes de guardar, completa: ${camposPendientesImportacion.value.join(', ')}.`
+    }
+    return `${total} preguntas listas para revisar. Recorre el banco y pulsa “Guardar evaluación” cuando esté listo.`
+  }
+  if (!excelFile.value) return 'Selecciona un archivo .xlsx. Debe contener entre 1 y 50 preguntas y las cinco columnas indicadas.'
+  return 'Archivo seleccionado. Pulsa “Cargar preguntas” para incorporarlo al editor y revisarlo antes de guardar.'
+})
+
+const iconoMensajeImportacion = computed(() => ({
+  info: 'sync',
+  warning: 'info',
+  error: 'error',
+  success: 'check_circle'
+}[estadoMensajeImportacion.value] || 'info'))
+
+  watch(() => props.importacionesExcelCompletadas, (completadas, anteriores) => {
+    if (completadas > anteriores) {
+      preguntasDesdeExcel.value = true
+      currentQuestionIndex.value = 0
+      currentQuestionStep.value = 1
+    }
+  })
+
+  watch(evaluationDialogOpen, (abierto) => {
+    if (abierto) {
+      preguntasDesdeExcel.value = false
+      emit('limpiar-importacion-excel')
+    }
+  })
 
 const resetTaskDraft = () => {
   props.tareaForm.titulo = ''
@@ -664,7 +861,7 @@ const goToNextExistingQuestion = () => {
 }
 
 const createAndGoToNextQuestion = () => {
-  if (props.evalForm.preguntas.length >= 10 || !isCurrentQuestionReady.value) return
+  if (props.evalForm.preguntas.length >= 50 || !isCurrentQuestionReady.value) return
   emit('agregar-pregunta')
   currentQuestionIndex.value = props.evalForm.preguntas.length - 1
   currentQuestionStep.value = 1
@@ -672,7 +869,9 @@ const createAndGoToNextQuestion = () => {
 
 const advanceQuestion = () => {
   if (!isCurrentQuestionReady.value) return
-  if (currentQuestionIndex.value === props.evalForm.preguntas.length - 1 && props.evalForm.preguntas.length < 10) {
+  if (!preguntasDesdeExcel.value
+    && currentQuestionIndex.value === props.evalForm.preguntas.length - 1
+    && props.evalForm.preguntas.length < 50) {
     emit('agregar-pregunta')
     currentQuestionIndex.value = props.evalForm.preguntas.length - 1
     currentQuestionStep.value = 1
@@ -688,9 +887,23 @@ const handleCreateTask = () => {
 
 const handleCreateEvaluation = () => {
   emit('crear-evaluacion')
+}
+
+const cerrarEditorEvaluacion = () => {
   evaluationDialogOpen.value = false
-  currentQuestionIndex.value = 0
-  currentQuestionStep.value = 1
+  emit('cancelar-edicion-evaluacion')
+}
+
+const handleImportEvaluationExcel = () => {
+  if (!canImportExcel.value) return
+  emit('importar-evaluacion-excel', excelFile.value)
+}
+
+const limpiarMensajeImportacion = () => emit('limpiar-importacion-excel')
+
+const handleExcelFileUpdate = () => {
+  preguntasDesdeExcel.value = false
+  limpiarMensajeImportacion()
 }
 </script>
 
@@ -1123,5 +1336,31 @@ const handleCreateEvaluation = () => {
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+.teacher-import-feedback {
+  min-height: 44px;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.teacher-import-feedback--info {
+  background: #eaf1f8;
+  color: #31506b;
+}
+
+.teacher-import-feedback--warning {
+  background: #fff4df;
+  color: #795b24;
+}
+
+.teacher-import-feedback--error {
+  background: #fcebea;
+  color: #873c35;
+}
+
+.teacher-import-feedback--success {
+  background: #e8f2ec;
+  color: #315d50;
 }
 </style>

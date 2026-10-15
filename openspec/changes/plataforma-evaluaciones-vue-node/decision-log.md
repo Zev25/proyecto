@@ -33,6 +33,13 @@
 - Se cambia la carga de preguntas de evaluacion a un flujo guiado de una pregunta visible por vez, evitando apilar nuevas preguntas debajo de la anterior.
 - Queda pendiente verificar visualmente el panel de profesor en ejecucion real y comenzar el desarrollo visual del panel de administrador.
 
+## 2026-10-15
+
+- Se detecta que el numero configurado para sorteo podia superar las preguntas existentes en el banco, creando evaluaciones imposibles de iniciar.
+- Se valida `preguntasPorIntento <= preguntas.length` en backend al crear y editar, y se devuelve un error 400 con el tamano actual del banco.
+- El editor docente muestra el conteo de preguntas del banco, marca el campo cuando el sorteo lo supera y bloquea el guardado hasta corregirlo.
+- Se mantiene pendiente la verificacion manual del punto 3.4 en una base de pruebas; esta correccion no la sustituye.
+
 ## Regla de mantenimiento
 
 - Registrar nuevas decisiones por fecha, indicando contexto breve y efecto en alcance, diseno o tareas.

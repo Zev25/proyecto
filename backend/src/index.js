@@ -1,41 +1,82 @@
+import multer from 'multer';
 import { router } from './config.js';
 import { conexion } from './db.js';
-import { crearUsuario, obtenerUsuarios, obtenerUsuarioPorId, borrarUsuario } from './controladores/usuarios.js';
+import { autorizarRoles } from './middleware/autorizarRoles.js';
+import { parsearPreguntasExcel } from './servicios/evaluacionesExcel.js';
+
+// Controladores de acceso y usuarios
 import { loginUsuario } from './controladores/auth.js';
 import { buscarUsuarioPorUsuario } from './controladores/admin.js';
-import { autorizarRoles } from './middleware/autorizarRoles.js';
+import {
+  borrarUsuario,
+  crearUsuario,
+  obtenerUsuarioPorId,
+  obtenerUsuarios
+} from './controladores/usuarios.js';
+
+// Controladores de profesor y alumno
 import {
   crearEvaluacionConPreguntas,
-  listarEvaluacionesConPreguntas,
+  listarEvaluacionesDisponibles,
+  listarEvaluacionesProfesor,
+  obtenerEvaluacionProfesor,
+  actualizarEvaluacionProfesor,
+  iniciarIntentoAleatorio,
   responderEvaluacionAuto,
   verIntentosProfesor,
   verDetalleIntento
 } from './controladores/evaluaciones.js';
-import { crearTarea, listarTareasPorCurso, listarTareasPorProfesor } from './controladores/tareas.js';
 import {
-  obtenerResumenAlumno,
+  crearTarea,
+  listarTareasPorCurso,
+  listarTareasPorProfesor
+} from './controladores/tareas.js';
+import {
   obtenerCursosAlumnoPorUsuario,
-  listarTareasAlumno,
+  obtenerResumenAlumno,
   listarIntentosAlumno,
+  listarTareasAlumno,
   verDetalleIntentoAlumno
 } from './controladores/alumno.js';
+
+// Controladores de administracion
 import {
-  obtenerResumenAdmin,
-  listarUsuariosAdmin,
-  obtenerResumenCursosAdmin,
-  listarTareasProfesorAdmin,
-  listarEvaluacionesProfesorAdmin,
-  cambiarRolUsuarioAdmin,
   actualizarCursoUsuarioAdmin,
   actualizarEstadoUsuarioAdmin,
-  ROLES_VALIDOS,
+  cambiarRolUsuarioAdmin,
+  CURSOS_VALIDOS,
   ESTADOS_VALIDOS,
-  CURSOS_VALIDOS
+  listarEvaluacionesProfesorAdmin,
+  listarTareasProfesorAdmin,
+  listarUsuariosAdmin,
+  obtenerResumenAdmin,
+  obtenerResumenCursosAdmin,
 } from './controladores/adminPanel.js';
 import {
-  crearInvitacionCursoAdmin,
-  canjearInvitacionCursoAlumno
+  canjearInvitacionCursoAlumno,
+  crearInvitacionCursoAdmin
 } from './controladores/invitaciones.js';
+
+const cargarExcelEvaluacion = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 4 },
+  fileFilter: (_req, file, callback) => {
+    if (!file.originalname.toLowerCase().endsWith('.xlsx')) {
+      return callback(new Error('Solo se admiten archivos .xlsx'));
+    }
+    return callback(null, true);
+  }
+}).single('archivo');
+
+const fechaIsoValida = (fecha) => {
+  if (fecha === null || fecha === undefined || fecha === '') return true;
+  if (typeof fecha !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return false;
+  const [anio, mes, dia] = fecha.split('-').map(Number);
+  const fechaUtc = new Date(Date.UTC(anio, mes - 1, dia));
+  return fechaUtc.getUTCFullYear() === anio
+    && fechaUtc.getUTCMonth() === mes - 1
+    && fechaUtc.getUTCDate() === dia;
+};
 
 const asegurarEstadoUsuario = async () => {
   try {
@@ -51,6 +92,45 @@ const asegurarEstadoUsuario = async () => {
       await conexion.query(
         "ALTER TABLE Usuario ADD COLUMN estado ENUM('activo','inactivo','bloqueado') NOT NULL DEFAULT 'activo'"
       );
+    }
+
+    const [[maxPreguntasColumn]] = await conexion.query(
+      `SELECT COLUMN_DEFAULT AS valor
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'Evaluacion'
+         AND COLUMN_NAME = 'max_preguntas'
+       LIMIT 1`
+    );
+
+    if (Number(maxPreguntasColumn?.valor || 0) !== 50) {
+      await conexion.query('ALTER TABLE Evaluacion ALTER COLUMN max_preguntas SET DEFAULT 50');
+    }
+
+    const [columnaPreguntasIntento] = await conexion.query(
+      `SELECT COUNT(*) AS total
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'Evaluacion'
+         AND COLUMN_NAME = 'preguntas_por_intento'`
+    );
+
+    if (Number(columnaPreguntasIntento?.[0]?.total || 0) === 0) {
+      await conexion.query(
+        'ALTER TABLE Evaluacion ADD COLUMN preguntas_por_intento INT NOT NULL DEFAULT 20 AFTER max_preguntas'
+      );
+    }
+
+    const [columnaFechaFinEvaluacion] = await conexion.query(
+      `SELECT COUNT(*) AS total
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'Evaluacion'
+         AND COLUMN_NAME = 'fecha_fin'`
+    );
+
+    if (Number(columnaFechaFinEvaluacion?.[0]?.total || 0) === 0) {
+      await conexion.query('ALTER TABLE Evaluacion ADD COLUMN fecha_fin DATE DEFAULT NULL AFTER preguntas_por_intento');
     }
 
     const [columnasEmail] = await conexion.query(
@@ -93,6 +173,81 @@ const asegurarEstadoUsuario = async () => {
        SELECT id, curso
        FROM Usuario
        WHERE tipo = 'alumno' AND curso IS NOT NULL AND TRIM(curso) <> ''`
+    );
+
+    const [columnasAlumnoIntento] = await conexion.query(
+      `SELECT COUNT(*) AS total
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'Intento'
+         AND COLUMN_NAME = 'alumno_id'`
+    );
+
+    if (Number(columnasAlumnoIntento?.[0]?.total || 0) === 0) {
+      await conexion.query('ALTER TABLE Intento ADD COLUMN alumno_id INT NULL AFTER evaluacion_id');
+    }
+
+    await conexion.query(
+      `UPDATE Intento i
+       JOIN Usuario u ON u.usuario = i.alumno_usuario AND u.tipo = 'alumno'
+       SET i.alumno_id = u.id
+       WHERE i.alumno_id IS NULL`
+    );
+
+    const [fkIntentoAlumno] = await conexion.query(
+      `SELECT COUNT(*) AS total
+       FROM information_schema.KEY_COLUMN_USAGE
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'Intento'
+         AND CONSTRAINT_NAME = 'fk_intento_alumno_id'`
+    );
+
+    if (Number(fkIntentoAlumno?.[0]?.total || 0) === 0) {
+      await conexion.query(
+        `ALTER TABLE Intento
+         ADD CONSTRAINT fk_intento_alumno_id
+         FOREIGN KEY (alumno_id) REFERENCES Usuario(id) ON DELETE SET NULL`
+      );
+    }
+
+    await conexion.query(
+      `CREATE TABLE IF NOT EXISTS IntentoPregunta (
+        intento_id INT NOT NULL,
+        pregunta_id INT NOT NULL,
+        orden SMALLINT UNSIGNED NOT NULL,
+        PRIMARY KEY (intento_id, pregunta_id),
+        UNIQUE KEY uq_intento_pregunta_orden (intento_id, orden),
+        CONSTRAINT fk_intentopregunta_intento FOREIGN KEY (intento_id) REFERENCES Intento(id) ON DELETE CASCADE,
+        CONSTRAINT fk_intentopregunta_pregunta FOREIGN KEY (pregunta_id) REFERENCES Pregunta(id) ON DELETE CASCADE
+      )`
+    );
+
+    await conexion.query(
+      `INSERT IGNORE INTO IntentoPregunta (intento_id, pregunta_id, orden)
+       SELECT r.intento_id, r.pregunta_id,
+              ROW_NUMBER() OVER (PARTITION BY r.intento_id ORDER BY r.id)
+       FROM Respuesta r
+       JOIN Intento i ON i.id = r.intento_id
+       JOIN Pregunta p ON p.id = r.pregunta_id AND p.evaluacion_id = i.evaluacion_id`
+    );
+
+    await conexion.query(
+      `CREATE TABLE IF NOT EXISTS IntentoPregunta (
+        intento_id INT NOT NULL,
+        pregunta_id INT NOT NULL,
+        orden SMALLINT UNSIGNED NOT NULL,
+        PRIMARY KEY (intento_id, pregunta_id),
+        UNIQUE KEY uq_intento_pregunta_orden (intento_id, orden),
+        CONSTRAINT fk_intentopregunta_intento FOREIGN KEY (intento_id) REFERENCES Intento(id) ON DELETE CASCADE,
+        CONSTRAINT fk_intentopregunta_pregunta FOREIGN KEY (pregunta_id) REFERENCES Pregunta(id) ON DELETE CASCADE
+      )`
+    );
+
+    await conexion.query(
+      `INSERT IGNORE INTO IntentoPregunta (intento_id, pregunta_id, orden)
+       SELECT intento_id, pregunta_id,
+              ROW_NUMBER() OVER (PARTITION BY intento_id ORDER BY id)
+       FROM Respuesta`
     );
 
     await conexion.query(
@@ -553,19 +708,140 @@ router.get('/panel-admin', autorizarRoles('admin'), (req, res) => {
 // rutas para evaluaciones
 
 router.post('/profesor/evaluaciones', autorizarRoles('profesor'), async (req, res) => {
-  const { titulo, curso, preguntas } = req.body || {};
+  const { titulo, curso, preguntas, preguntasPorIntento, fechaFin } = req.body || {};
 
-  if (!titulo || !curso || !Array.isArray(preguntas) || preguntas.length === 0 || preguntas.length > 10) {
-    return res.status(400).json({ ok: false, error: 'Debes enviar un título, curso y entre 1 y 10 preguntas' });
+  if (!titulo || !curso || !Array.isArray(preguntas) || preguntas.length === 0 || preguntas.length > 50) {
+    return res.status(400).json({ ok: false, error: 'Debes enviar un título, curso y entre 1 y 50 preguntas' });
+  }
+  if (!fechaIsoValida(fechaFin)) {
+    return res.status(400).json({ ok: false, error: 'La fecha de fin debe tener formato AAAA-MM-DD y ser válida' });
   }
 
   try {
     const profesorUsuario = req.body?.usuario || 'profesor-demo';
-    const result = await crearEvaluacionConPreguntas({ titulo, curso, profesorUsuario, preguntas });
+    const result = await crearEvaluacionConPreguntas({
+      titulo,
+      curso,
+      profesorUsuario,
+      preguntas,
+      preguntasPorIntento,
+      fechaFin: fechaFin || null
+    });
+
+    if (!result.ok) {
+      if (result.code === 'BANCO_VACIO') return res.status(400).json({ ok: false, error: 'El banco de preguntas no puede estar vacío' });
+      if (result.code === 'BANCO_SUPERA_LIMITE') return res.status(400).json({ ok: false, error: 'El banco admite como máximo 50 preguntas' });
+      if (result.code === 'CANTIDAD_INTENTO_INVALIDA') return res.status(400).json({ ok: false, error: 'La cantidad de preguntas por intento debe estar entre 1 y 50' });
+      if (result.code === 'CANTIDAD_INTENTO_SUPERA_BANCO') return res.status(400).json({ ok: false, error: `La cantidad por intento no puede superar las ${preguntas.length} preguntas del banco` });
+      if (result.code === 'PREGUNTAS_INVALIDAS') return res.status(400).json({ ok: false, error: 'Cada pregunta debe tener enunciado, respuesta correcta y puntaje válido' });
+    }
+
     return res.status(201).json({ ok: true, message: 'Evaluacion creada', evaluacionId: result.evaluacionId });
   } catch (error) {
     return res.status(500).json({ ok: false, error: 'No se pudo crear evaluacion', message: error.message });
   }
+});
+
+router.get('/profesor/evaluaciones', autorizarRoles('profesor'), async (req, res) => {
+  const profesorUsuario = req.headers['x-user-name'] || req.query?.usuario;
+  if (!profesorUsuario) return res.status(400).json({ ok: false, error: 'Falta identificar al profesor' });
+
+  try {
+    const data = await listarEvaluacionesProfesor(profesorUsuario);
+    return res.json({ ok: true, data });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No se pudieron listar las evaluaciones', message: error.message });
+  }
+});
+
+router.get('/profesor/evaluaciones/:id', autorizarRoles('profesor'), async (req, res) => {
+  const evaluacionId = Number(req.params.id);
+  const profesorUsuario = req.headers['x-user-name'] || req.query?.usuario;
+  if (!Number.isInteger(evaluacionId) || evaluacionId <= 0) {
+    return res.status(400).json({ ok: false, error: 'ID de evaluación inválido' });
+  }
+  if (!profesorUsuario) return res.status(400).json({ ok: false, error: 'Falta identificar al profesor' });
+
+  try {
+    const data = await obtenerEvaluacionProfesor({ evaluacionId, profesorUsuario });
+    if (!data) return res.status(404).json({ ok: false, error: 'Evaluación no encontrada' });
+    if (data.tieneIntentos) return res.status(409).json({ ok: false, error: 'No se puede editar una evaluación que ya tiene intentos' });
+    return res.json({ ok: true, data });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No se pudo obtener la evaluación', message: error.message });
+  }
+});
+
+router.put('/profesor/evaluaciones/:id', autorizarRoles('profesor'), async (req, res) => {
+  const evaluacionId = Number(req.params.id);
+  const { titulo, curso, preguntas, preguntasPorIntento, fechaFin } = req.body || {};
+  const profesorUsuario = req.headers['x-user-name'] || req.body?.usuario;
+
+  if (!Number.isInteger(evaluacionId) || evaluacionId <= 0) {
+    return res.status(400).json({ ok: false, error: 'ID de evaluación inválido' });
+  }
+  if (!profesorUsuario || !titulo?.trim() || !curso || !Array.isArray(preguntas)) {
+    return res.status(400).json({ ok: false, error: 'Completa título, curso y preguntas antes de guardar' });
+  }
+  if (!fechaIsoValida(fechaFin)) {
+    return res.status(400).json({ ok: false, error: 'La fecha de fin debe tener formato AAAA-MM-DD y ser válida' });
+  }
+
+  try {
+    const result = await actualizarEvaluacionProfesor({
+      evaluacionId,
+      profesorUsuario,
+      titulo: titulo.trim(),
+      curso,
+      preguntas,
+      preguntasPorIntento,
+      fechaFin: fechaFin || null
+    });
+    if (!result.ok) {
+      if (result.code === 'EVALUACION_NO_ENCONTRADA') return res.status(404).json({ ok: false, error: 'Evaluación no encontrada' });
+      if (result.code === 'EVALUACION_CON_INTENTOS') return res.status(409).json({ ok: false, error: 'No se puede editar una evaluación que ya tiene intentos' });
+      if (result.code === 'BANCO_VACIO') return res.status(400).json({ ok: false, error: 'El banco de preguntas no puede estar vacío' });
+      if (result.code === 'BANCO_SUPERA_LIMITE') return res.status(400).json({ ok: false, error: 'El banco admite como máximo 50 preguntas' });
+      if (result.code === 'CANTIDAD_INTENTO_INVALIDA') return res.status(400).json({ ok: false, error: 'La cantidad de preguntas por intento debe estar entre 1 y 50' });
+      if (result.code === 'CANTIDAD_INTENTO_SUPERA_BANCO') return res.status(400).json({ ok: false, error: `La cantidad por intento no puede superar las ${preguntas.length} preguntas del banco` });
+      if (result.code === 'PREGUNTAS_INVALIDAS') return res.status(400).json({ ok: false, error: 'Cada pregunta debe tener enunciado, respuesta correcta y puntaje válido' });
+    }
+    return res.json({ ok: true, message: 'Evaluación actualizada', evaluacionId });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No se pudo actualizar la evaluación', message: error.message });
+  }
+});
+
+router.post('/profesor/evaluaciones/importar-excel', autorizarRoles('profesor'), (req, res) => {
+  cargarExcelEvaluacion(req, res, async (uploadError) => {
+    if (uploadError) {
+      const message = uploadError.code === 'LIMIT_FILE_SIZE'
+        ? 'El archivo no puede superar 2 MB'
+        : uploadError.message || 'No se pudo recibir el archivo Excel';
+      return res.status(400).json({ ok: false, error: message });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ ok: false, error: 'Debes adjuntar un archivo .xlsx en el campo archivo' });
+    }
+
+    try {
+      const preguntas = await parsearPreguntasExcel(req.file.buffer);
+
+      return res.status(200).json({
+        ok: true,
+        message: 'Preguntas cargadas para revisión',
+        totalPreguntas: preguntas.length,
+        preguntas
+      });
+    } catch (error) {
+      const status = error.code === 'ARCHIVO_EXCEL_INVALIDO' ? 400 : 500;
+      return res.status(status).json({
+        ok: false,
+        error: status === 400 ? error.message : 'No se pudo importar la evaluación'
+      });
+    }
+  });
 });
 
 router.get('/alumno/evaluaciones', autorizarRoles('alumno'), async (req, res) => {
@@ -581,10 +857,40 @@ router.get('/alumno/evaluaciones', autorizarRoles('alumno'), async (req, res) =>
       ? [curso]
       : (usuario ? await obtenerCursosAlumnoPorUsuario(usuario) : []);
 
-    const data = await listarEvaluacionesConPreguntas(cursos);
+    const data = await listarEvaluacionesDisponibles(cursos);
     return res.json({ ok: true, total: data.length, data });
   } catch (error) {
     return res.status(500).json({ ok: false, error: 'No se pudieron listar evaluaciones', message: error.message });
+  }
+});
+
+router.post('/alumno/evaluaciones/:id/intentos', autorizarRoles('alumno'), async (req, res) => {
+  const evaluacionId = Number(req.params.id);
+  const alumnoUsuario = req.user?.usuario || req.headers['x-user-name'];
+
+  if (!Number.isInteger(evaluacionId) || evaluacionId <= 0) {
+    return res.status(400).json({ ok: false, error: 'ID de evaluación inválido' });
+  }
+
+  if (!alumnoUsuario) {
+    return res.status(401).json({ ok: false, error: 'Alumno no autenticado' });
+  }
+
+  try {
+    const result = await iniciarIntentoAleatorio({ evaluacionId, alumnoUsuario });
+
+    if (!result.ok) {
+      if (result.code === 'ALUMNO_NO_ENCONTRADO') return res.status(404).json({ ok: false, error: 'Alumno no encontrado' });
+      if (result.code === 'EVALUACION_NO_ENCONTRADA') return res.status(404).json({ ok: false, error: 'Evaluación no encontrada' });
+      if (result.code === 'ALUMNO_NO_ACTIVO') return res.status(403).json({ ok: false, error: 'Alumno inactivo o bloqueado' });
+      if (result.code === 'ALUMNO_NO_MATRICULADO') return res.status(403).json({ ok: false, error: 'El alumno no está inscrito en este curso' });
+      if (result.code === 'BANCO_INSUFICIENTE') return res.status(409).json({ ok: false, error: 'La evaluación no tiene suficientes preguntas', disponibles: result.disponibles, requeridas: result.requeridas });
+      return res.status(400).json({ ok: false, error: 'No se pudo iniciar el intento', code: result.code });
+    }
+
+    return res.status(201).json({ ok: true, message: 'Intento iniciado', data: result });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No se pudo iniciar el intento', message: error.message });
   }
 });
 
@@ -621,10 +927,10 @@ router.get('/alumno/tareas', autorizarRoles('alumno'), async (req, res) => {
 });
 
 router.get('/alumno/intentos', autorizarRoles('alumno'), async (req, res) => {
-  const usuario = req.query?.usuario || req.headers['x-user-name'];
+  const usuario = req.user?.usuario || req.headers['x-user-name'];
 
   if (!usuario) {
-    return res.status(400).json({ ok: false, error: 'Usuario requerido' });
+    return res.status(401).json({ ok: false, error: 'Alumno no autenticado' });
   }
 
   try {
@@ -637,14 +943,14 @@ router.get('/alumno/intentos', autorizarRoles('alumno'), async (req, res) => {
 
 router.get('/alumno/intentos/:intentoId', autorizarRoles('alumno'), async (req, res) => {
   const intentoId = Number(req.params.intentoId);
-  const usuario = req.query?.usuario || req.headers['x-user-name'];
+  const usuario = req.user?.usuario || req.headers['x-user-name'];
 
   if (!Number.isInteger(intentoId) || intentoId <= 0) {
     return res.status(400).json({ ok: false, error: 'ID de intento invalido' });
   }
 
   if (!usuario) {
-    return res.status(400).json({ ok: false, error: 'Usuario requerido' });
+    return res.status(401).json({ ok: false, error: 'Alumno no autenticado' });
   }
 
   try {
@@ -658,7 +964,8 @@ router.get('/alumno/intentos/:intentoId', autorizarRoles('alumno'), async (req, 
 
 router.post('/alumno/evaluaciones/:id/responder', autorizarRoles('alumno'), async (req, res) => {
   const evaluacionId = Number(req.params.id);
-  const { respuestas, usuario } = req.body || {};
+  const { intentoId, respuestas } = req.body || {};
+  const alumnoUsuario = req.user?.usuario || req.headers['x-user-name'];
 
   if (!Number.isInteger(evaluacionId) || evaluacionId <= 0) {
     return res.status(400).json({ ok: false, error: 'ID de evaluacion invalido' });
@@ -668,12 +975,33 @@ router.post('/alumno/evaluaciones/:id/responder', autorizarRoles('alumno'), asyn
     return res.status(400).json({ ok: false, error: 'Debes enviar respuestas' });
   }
 
+  if (!Number.isInteger(Number(intentoId)) || Number(intentoId) <= 0) {
+    return res.status(400).json({ ok: false, error: 'Debes enviar el ID del intento iniciado' });
+  }
+
+  if (!alumnoUsuario) {
+    return res.status(401).json({ ok: false, error: 'Alumno no autenticado' });
+  }
+
   try {
     const result = await responderEvaluacionAuto({
+      intentoId: Number(intentoId),
       evaluacionId,
-      alumnoUsuario: usuario || 'alumno-demo',
+      alumnoUsuario,
       respuestas
     });
+
+    if (!result.ok) {
+      if (result.code === 'ALUMNO_NO_ENCONTRADO') return res.status(404).json({ ok: false, error: 'Alumno no encontrado' });
+      if (result.code === 'EVALUACION_NO_ENCONTRADA') return res.status(404).json({ ok: false, error: 'Evaluación no encontrada' });
+      if (result.code === 'ALUMNO_NO_ACTIVO') return res.status(403).json({ ok: false, error: 'Alumno inactivo o bloqueado' });
+      if (result.code === 'ALUMNO_NO_MATRICULADO') return res.status(403).json({ ok: false, error: 'El alumno no está inscrito en este curso' });
+      if (result.code === 'INTENTO_NO_ENCONTRADO') return res.status(404).json({ ok: false, error: 'Intento no encontrado' });
+      if (result.code === 'INTENTO_YA_RESPONDIDO') return res.status(409).json({ ok: false, error: 'El intento ya fue respondido' });
+      if (result.code === 'SELECCION_INVALIDA') return res.status(409).json({ ok: false, error: 'La selección guardada del intento es inválida' });
+      if (result.code === 'RESPUESTAS_INVALIDAS') return res.status(400).json({ ok: false, error: 'Las respuestas incluyen preguntas inválidas o repetidas' });
+      return res.status(400).json({ ok: false, error: 'No se pudo registrar el intento', code: result.code });
+    }
 
     return res.json({
       ok: true,
@@ -769,12 +1097,18 @@ router.get('/tareas/:curso', async (req, res) => {
 
 router.get('/profesor/evaluaciones/:id/intentos', autorizarRoles('profesor'), async (req, res) => {
   const evaluacionId = Number(req.params.id);
+  const profesorUsuario = req.user?.usuario || req.headers['x-user-name'];
   if (!Number.isInteger(evaluacionId) || evaluacionId <= 0) {
     return res.status(400).json({ ok: false, error: 'ID de evaluacion invalido' });
   }
 
+  if (!profesorUsuario) {
+    return res.status(401).json({ ok: false, error: 'Profesor no autenticado' });
+  }
+
   try {
-    const data = await verIntentosProfesor(evaluacionId);
+    const data = await verIntentosProfesor({ evaluacionId, profesorUsuario });
+    if (!data) return res.status(404).json({ ok: false, error: 'Evaluación no encontrada' });
     return res.json({ ok: true, total: data.length, data });
   } catch (error) {
     return res.status(500).json({ ok: false, error: 'No se pudieron obtener intentos', message: error.message });
@@ -783,12 +1117,17 @@ router.get('/profesor/evaluaciones/:id/intentos', autorizarRoles('profesor'), as
 
 router.get('/profesor/intentos/:intentoId', autorizarRoles('profesor'), async (req, res) => {
   const intentoId = Number(req.params.intentoId);
+  const profesorUsuario = req.user?.usuario || req.headers['x-user-name'];
   if (!Number.isInteger(intentoId) || intentoId <= 0) {
     return res.status(400).json({ ok: false, error: 'ID de intento invalido' });
   }
 
+  if (!profesorUsuario) {
+    return res.status(401).json({ ok: false, error: 'Profesor no autenticado' });
+  }
+
   try {
-    const detalle = await verDetalleIntento(intentoId);
+    const detalle = await verDetalleIntento({ intentoId, profesorUsuario });
     if (!detalle) return res.status(404).json({ ok: false, error: 'Intento no encontrado' });
     return res.json({ ok: true, data: detalle });
   } catch (error) {

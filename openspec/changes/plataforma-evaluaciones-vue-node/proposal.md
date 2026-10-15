@@ -5,7 +5,7 @@ Se necesita una herramienta educativa digital unificada que reduzca la fragmenta
 ## What Changes
 
 - Crear una plataforma con autenticacion y espacios diferenciados para profesor y alumno.
-- Incorporar gestion de examenes con banco de hasta 50 preguntas y generacion automatica de 20 preguntas aleatorias por intento.
+- Incorporar gestion de examenes con bancos de hasta 50 preguntas, importables desde Excel, y una cantidad aleatoria por intento configurable por el profesor entre 1 y 50 (20 por defecto).
 - Habilitar una estructura inicial para evaluaciones y resultados, con trazabilidad por intento y por alumno.
 - Definir un plan de trabajo por fases donde IA y revision de tareas por archivo se implementan al final.
 - Establecer documentacion continua del cambio (alcance, decisiones, riesgos y tareas) dentro de OpenSpec.
@@ -14,7 +14,7 @@ Se necesita una herramienta educativa digital unificada que reduzca la fragmenta
 
 ### New Capabilities
 - `acceso-y-roles-educativos`: inicio de sesion diferenciado y autorizacion por rol (profesor/alumno) para acceso a funciones y vistas.
-- `evaluaciones-aleatorias`: gestion de examenes y generacion de intentos con seleccion aleatoria de 20 preguntas desde un banco de hasta 50.
+- `evaluaciones-aleatorias`: gestion de examenes, importacion de bancos XLSX y generacion de intentos con una cantidad configurable de preguntas (1-50, 20 por defecto) desde un banco de hasta 50.
 - `resultados-y-trazabilidad`: registro de respuestas, intentos y resultados consultables por alumno y por docente.
 - `entregas-de-tareas-por-archivo`: carga y organizacion de entregas de archivos por tarea y alumno, con consulta ordenada para el docente.
 - `correccion-asistida-por-ia`: asistencia de IA para sugerir correccion de respuestas y cumplimiento de rubrica en archivos entregados.

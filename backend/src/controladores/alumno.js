@@ -32,6 +32,14 @@ const obtenerCursosAlumnoPorUsuario = async (usuario) => {
 
 const construirIn = (valores) => valores.map(() => '?').join(', ');
 
+const obtenerAlumnoIdPorUsuario = async (connection, usuario) => {
+  const [rows] = await connection.query(
+    "SELECT id FROM Usuario WHERE usuario = ? AND tipo = 'alumno' LIMIT 1",
+    [usuario]
+  );
+  return rows[0]?.id || null;
+};
+
 const obtenerResumenAlumno = async ({ usuario, curso = null }) => {
   const connection = await conexion.getConnection();
 
@@ -118,13 +126,16 @@ const listarIntentosAlumno = async (usuario) => {
   const connection = await conexion.getConnection();
 
   try {
+    const alumnoId = await obtenerAlumnoIdPorUsuario(connection, usuario);
+    if (!alumnoId) return [];
+
     const [rows] = await connection.query(
       `SELECT i.id, i.evaluacion_id, i.nota_total, i.created_at, e.titulo, e.curso
        FROM Intento i
        JOIN Evaluacion e ON e.id = i.evaluacion_id
-       WHERE i.alumno_usuario = ?
+      WHERE i.alumno_id = ?
        ORDER BY i.id DESC`,
-      [usuario]
+          [alumnoId]
     );
     return rows;
   } finally {
@@ -136,13 +147,16 @@ const verDetalleIntentoAlumno = async ({ intentoId, usuario }) => {
   const connection = await conexion.getConnection();
 
   try {
+    const alumnoId = await obtenerAlumnoIdPorUsuario(connection, usuario);
+    if (!alumnoId) return null;
+
     const [encabezadoRows] = await connection.query(
       `SELECT i.id, i.alumno_usuario, i.nota_total, i.created_at, e.titulo, e.curso
        FROM Intento i
        JOIN Evaluacion e ON e.id = i.evaluacion_id
-       WHERE i.id = ? AND i.alumno_usuario = ?
+      WHERE i.id = ? AND i.alumno_id = ?
        LIMIT 1`,
-      [intentoId, usuario]
+          [intentoId, alumnoId]
     );
 
     if (!encabezadoRows[0]) return null;

@@ -48,6 +48,22 @@ Ver motivacion en proposal.md (seccion Why). El proyecto inicia sin implementaci
 - Alternatives considered:
   - Documentacion solo al final: descartada por riesgo de omisiones y contradicciones.
 
+### 6) Importacion de bancos de preguntas desde XLSX
+- Decision: recibir archivos `.xlsx` en memoria, validar encabezados y filas, y devolver el banco al editor para revision antes de guardar la evaluacion.
+- Formato: columnas `Enunciado`, `Tipo`, `Opciones`, `Respuesta correcta` y `Puntos`; las opciones se separan con `|` o se indican como arreglo JSON de textos. Una celda de opciones vacia representa una pregunta abierta.
+- Limites: admitir hasta 50 preguntas y archivos de hasta 2 MB; rechazar el libro completo si alguna fila no es valida.
+- Rationale: el profesor puede revisar y corregir el banco importado; la persistencia ocurre solo al usar la accion explicita de guardar evaluacion.
+
+### 7) Lista y edicion de evaluaciones del profesor
+- Decision: listar solo evaluaciones creadas por el profesor autenticado, mostrando fechas de creacion y fin, curso e intentos registrados.
+- Decision: permitir editar banco y metadatos solo antes del primer intento; actualizar evaluacion y preguntas en una transaccion.
+- Rationale: los intentos conservan el banco exacto que recibieron y no se alteran al editar una evaluacion ya utilizada.
+
+### 8) Limite de preguntas por intento
+- Decision: no permitir que `preguntas_por_intento` supere la cantidad de preguntas validas del banco, tanto al crear como al editar una evaluacion.
+- Interfaz: mostrar el tamano actual del banco en el editor, indicar el exceso y deshabilitar el guardado hasta corregirlo.
+- Rationale: evitar evaluaciones guardadas que inevitablemente fallarian al iniciar un intento por falta de preguntas.
+
 ## Risks / Trade-offs
 
 - [Riesgo] Aleatoriedad con dificultad desigual entre alumnos -> [Mitigacion] introducir etiquetado por dificultad y reglas de balanceo en fase posterior.
@@ -89,3 +105,4 @@ Esta estructura permite mantener el desarrollo modular y separar claramente la e
 - 2026-08-20: Backend confirmado en Node.js + Express con `mysql2` y `dotenv`.
 - 2026-08-20: IA y analisis de entregas por archivo se mueven explicitamente a la ultima fase.
 - 2026-08-20: Se solicita documentacion continua, incluyendo decisiones surgidas en las charlas.
+- 2026-10-15: El profesor puede configurar de 1 a 50 preguntas por intento (20 por defecto) e importar bancos XLSX con encabezados definidos.

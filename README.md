@@ -12,6 +12,7 @@ Sigue la [guía de puesta en marcha](pasos.md). Incluye requisitos, instalación
 - `backend/`: API Express y controladores por dominio.
 - `backend/db/schema.sql`: estructura de MySQL sin datos de usuarios.
 - `openspec/specs/`: registro del avance, decisiones y pruebas pendientes.
+- `openspec/specs/backend-seguridad.md`: estado de seguridad, riesgos y medidas pendientes.
 
 ## Colaboración
 

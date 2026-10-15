@@ -15,15 +15,19 @@
 
 ## 3. Evaluaciones aleatorias
 
-- [ ] 3.1 Implementar gestion de banco de preguntas con limite de 50 por evaluacion y verificar rechazo al superar el limite.
-- [ ] 3.2 Implementar generacion de intento con 20 preguntas aleatorias y verificar que cada intento persiste su seleccion exacta.
-- [ ] 3.3 Implementar validacion de banco insuficiente y verificar bloqueo de inicio cuando hay menos de 20 preguntas.
+- [x] 3.1 Implementar gestion de banco de preguntas con limite de 50 por evaluacion y verificar rechazo al superar el limite.
+- [x] 3.2 Implementar la cantidad de preguntas por intento elegida por el profesor, validar que no supere el banco y persistir la seleccion aleatoria exacta con su orden.
+- [x] 3.3 Bloquear el inicio del intento cuando el banco tiene menos preguntas que la cantidad configurada.
+- [ ] 3.4 Verificar manualmente banco de 50/51, cantidades configuradas distintas (por ejemplo 5 y 20), persistencia del orden y rechazo cuando el banco no alcanza la cantidad elegida en una base de pruebas.
+- [x] 3.5 Importar bancos desde archivo Excel `.xlsx` con enunciado, tipo, opciones, respuesta correcta y puntos.
 
 ## 4. Resultados y trazabilidad
 
-- [ ] 4.1 Implementar persistencia de respuestas por intento y verificar asociacion correcta alumno-intento-evaluacion.
-- [ ] 4.2 Implementar consulta de resultados para alumno y verificar que solo ve sus propios resultados.
-- [ ] 4.3 Implementar consulta docente de resultados por evaluacion y verificar listado de intentos y calificaciones.
+- [x] 4.1 Persistir intento/respuestas en una transaccion, enlazar intento con alumno/evaluacion y validar respuestas contra la seleccion guardada.
+- [x] 4.2 Filtrar listado y detalle de intentos por `alumno_id`.
+- [x] 4.3 Filtrar resultados y detalle docente por evaluacion creada por ese profesor.
+- [ ] 4.4 Verificar manualmente propiedad alumno/docente, nota y trazabilidad en una base aislada.
+- [ ] 4.5 Sustituir identidad por headers por autenticacion verificada antes de considerar seguros los controles de propiedad para produccion.
 
 ## 5. Entregas de tareas por archivo (pre-IA)
 
@@ -50,7 +54,8 @@
 - [x] 8.1 Separar el panel de profesor en una vista dedicada y reorganizar `App.vue` para reducir acoplamiento visual por perfil.
 - [x] 8.2 Redisenar el panel de profesor con Quasar, incluyendo selector global de curso, secciones por navegacion y formularios flotantes para tareas y evaluaciones.
 - [ ] 8.3 Verificar manualmente el comportamiento visual del panel de profesor en ejecucion real y ajustar responsividad o usabilidad segun hallazgos.
-- [ ] 8.4 Iniciar el desarrollo visual del panel de administrador siguiendo la nueva linea visual del panel de profesor.
+- [x] 8.4 Iniciar el desarrollo visual del panel de administrador siguiendo la nueva linea visual del panel de profesor; prototipo creado y estilo bajo revision.
+- [x] 8.5 Listar evaluaciones del profesor con fecha de creación y fin, e incorporar edición segura antes de que existan intentos.
 
 ## 9. Interfaz del alumno e integracion de actividades
 
@@ -59,8 +64,7 @@
 - [x] 9.3 Crear la vista visual de cursos con selector de materias y listas separadas de actividades activas y proximas.
 - [x] 9.4 Permitir abrir el detalle visual de tareas y evaluaciones de ejemplo, mostrando enunciado, fecha y estado; incluir campos de respuesta/archivo sin simular persistencia.
 - [ ] 9.5 Conectar el selector y las listas del alumno con cursos inscritos, tareas y evaluaciones reales, y clasificar las actividades segun su estado y fechas.
-- [ ] 9.6 Completar el flujo de evaluaciones reales del alumno: mostrar preguntas sin exponer respuestas correctas, enviar respuestas y reflejar intentos y resultados.
+- [x] 9.6 Conectar interfaz alumno con evaluaciones creadas por el profesor: iniciar intento, mostrar preguntas sin claves, enviar respuestas y mostrar nota/historial.
 - [ ] 9.7 Implementar y persistir el cambio de contrasena y las preferencias de notificaciones en el backend.
 - [ ] 9.8 Agregar pruebas de integracion del recorrido alumno y verificar responsive, estados vacios, errores de servidor y permisos.
-
-> La carga y persistencia de archivos, junto con la consulta docente de entregas, se mantiene en las tareas 5.1-5.3.
+- [ ] 9.9 Verificar manualmente el flujo alumno-evaluacion y cerrar la autenticacion antes de validar el aislamiento de resultados.

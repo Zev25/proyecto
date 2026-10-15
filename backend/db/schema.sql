@@ -44,7 +44,9 @@ CREATE TABLE IF NOT EXISTS Evaluacion (
   titulo VARCHAR(150) NOT NULL,
   curso VARCHAR(100) DEFAULT NULL,
   creado_por VARCHAR(80) NOT NULL,
-  max_preguntas INT NOT NULL DEFAULT 10,
+  max_preguntas INT NOT NULL DEFAULT 50,
+  preguntas_por_intento INT NOT NULL DEFAULT 20,
+  fecha_fin DATE DEFAULT NULL,
   created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -66,13 +68,41 @@ CREATE TABLE IF NOT EXISTS Pregunta (
 CREATE TABLE IF NOT EXISTS Intento (
   id INT NOT NULL AUTO_INCREMENT,
   evaluacion_id INT NOT NULL,
+  alumno_id INT DEFAULT NULL,
   alumno_usuario VARCHAR(80) NOT NULL,
   nota_total DECIMAL(6,2) NOT NULL DEFAULT 0.00,
   created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_intento_evaluacion (evaluacion_id),
+  KEY idx_intento_alumno_id (alumno_id),
   CONSTRAINT fk_intento_evaluacion
-    FOREIGN KEY (evaluacion_id) REFERENCES Evaluacion (id) ON DELETE CASCADE
+    FOREIGN KEY (evaluacion_id) REFERENCES Evaluacion (id) ON DELETE CASCADE,
+  CONSTRAINT fk_intento_alumno_id
+    FOREIGN KEY (alumno_id) REFERENCES Usuario (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS IntentoPregunta (
+  intento_id INT NOT NULL,
+  pregunta_id INT NOT NULL,
+  orden SMALLINT UNSIGNED NOT NULL,
+  PRIMARY KEY (intento_id, pregunta_id),
+  UNIQUE KEY uq_intento_pregunta_orden (intento_id, orden),
+  CONSTRAINT fk_intentopregunta_intento
+    FOREIGN KEY (intento_id) REFERENCES Intento (id) ON DELETE CASCADE,
+  CONSTRAINT fk_intentopregunta_pregunta
+    FOREIGN KEY (pregunta_id) REFERENCES Pregunta (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS IntentoPregunta (
+  intento_id INT NOT NULL,
+  pregunta_id INT NOT NULL,
+  orden SMALLINT UNSIGNED NOT NULL,
+  PRIMARY KEY (intento_id, pregunta_id),
+  UNIQUE KEY uq_intento_pregunta_orden (intento_id, orden),
+  CONSTRAINT fk_intentopregunta_intento
+    FOREIGN KEY (intento_id) REFERENCES Intento (id) ON DELETE CASCADE,
+  CONSTRAINT fk_intentopregunta_pregunta
+    FOREIGN KEY (pregunta_id) REFERENCES Pregunta (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS Respuesta (

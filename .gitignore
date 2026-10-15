@@ -31,3 +31,6 @@ Thumbs.db
 !.vscode/extensions.json
 
 # Los archivos Markdown, OpenSpec y lockfiles se conservan en el repositorio.
+
+
+resultados.ingration.test

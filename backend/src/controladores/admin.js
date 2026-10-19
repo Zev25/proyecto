@@ -14,18 +14,4 @@ const buscarUsuarioPorUsuario = async (usuarioBuscado = '') => {
     }
 };
 
-const asignarRolProfesor = async (usuarioBuscado) => {
-    const connection = await conexion.getConnection();
-
-    try {
-        const [result] = await connection.query(
-            `UPDATE Usuario SET tipo = 'profesor' WHERE usuario = ? AND tipo <> 'admin'`,
-            [usuarioBuscado]
-        );
-        return result;
-    } finally {
-        connection.release();
-    }
-};
-
-export { buscarUsuarioPorUsuario, asignarRolProfesor };
+export { buscarUsuarioPorUsuario };

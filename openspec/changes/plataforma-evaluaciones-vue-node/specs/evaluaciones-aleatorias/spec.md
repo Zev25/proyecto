@@ -54,11 +54,33 @@ El sistema MUST permitir al profesor importar bancos `.xlsx` con las columnas `E
 - **THEN** el profesor puede separarlas con `|` o escribirlas como un arreglo JSON de textos, y la respuesta correcta debe coincidir con una opcion
 
 ### Requirement: Lista docente de evaluaciones
-El sistema MUST permitir al profesor consultar unicamente sus propias evaluaciones con fecha de creacion, fecha de fin opcional y cantidad de intentos.
+El sistema MUST permitir al profesor consultar unicamente sus propias evaluaciones con fecha de creacion, fecha de fin opcional, tipo y cantidad de intentos.
 
 #### Scenario: Consulta de evaluaciones creadas
 - **WHEN** un profesor abre la seccion de evaluaciones
 - **THEN** el sistema muestra sus evaluaciones en filas y columnas, incluyendo fechas y una accion de edicion
+
+### Requirement: Clasificacion de evaluaciones
+El sistema MUST permitir clasificar cada evaluacion como evaluacion regular o examen final, sin alterar sus preguntas ni los intentos ya registrados.
+
+#### Scenario: Clasificacion al crear una evaluacion
+- **WHEN** el profesor crea una evaluacion
+- **THEN** el sistema guarda la categoria seleccionada entre evaluacion regular y examen final
+
+#### Scenario: Reclasificacion de una evaluacion con intentos
+- **WHEN** el profesor cambia unicamente la categoria de una evaluacion propia que ya tiene intentos
+- **THEN** el sistema actualiza la categoria y conserva sin cambios el banco, las respuestas y las notas historicas
+
+### Requirement: Realizacion de evaluaciones por categoria
+El sistema MUST presentar al alumno las evaluaciones regulares y los examenes finales en vistas diferenciadas, y permitir realizar intentos en cualquiera de las dos categorias.
+
+#### Scenario: Alumno abre evaluaciones regulares
+- **WHEN** el alumno selecciona Evaluaciones
+- **THEN** el sistema lista unicamente evaluaciones regulares de sus cursos y permite iniciar y enviar un intento
+
+#### Scenario: Alumno abre examenes finales
+- **WHEN** el alumno selecciona Examenes finales
+- **THEN** el sistema lista unicamente examenes finales de sus cursos y permite iniciar y enviar un intento
 
 ### Requirement: Edicion segura de evaluaciones
 El sistema MUST permitir editar titulo, curso, fecha de fin, configuracion y preguntas de una evaluacion propia que aun no tenga intentos.

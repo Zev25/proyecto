@@ -1,6 +1,6 @@
 # Seguridad del backend
 
-Fecha de revision: 2026-10-13
+Fecha de revision: 2026-10-19
 
 Este documento describe lo que se observa actualmente en el codigo del backend y lo pendiente antes de usarlo con datos reales o desplegarlo publicamente. Es una revision del codigo, no una auditoria de infraestructura ni una prueba de penetracion.
 
@@ -15,15 +15,16 @@ Este documento describe lo que se observa actualmente en el codigo del backend y
 
 ### Datos personales y acceso a rutas
 - La tabla `Usuario` almacena nombre, apellido, email, nombre de usuario, rol, estado y contrasena.
-- `GET /usuarios`, `GET /usuarios/:id`, `DELETE /usuarios/:id` y `GET /admin/buscar-usuario` no aplican actualmente `autorizarRoles`.
+- `GET /usuarios`, `GET /usuarios/:id`, `DELETE /usuarios/:id`, `GET /admin/buscar-usuario`, `GET /db-health` y `GET /tareas/:curso` no aplican actualmente `autorizarRoles`.
 - `GET /tareas/:curso` tambien es publico.
 - Rutas que sí usan `autorizarRoles` siguen siendo accesibles falsificando el rol en headers/body/query.
-- El login devuelve un error generico para credenciales invalidas, pero algunos handlers responden con `error.message`, lo que puede exponer detalles internos de MySQL.
+- `GET /panel-alumno` no usa el middleware y acepta el rol desde query/header/body; solo devuelve un mensaje, pero no es un control de acceso real.
+- El login devuelve un error generico para credenciales invalidas, pero varios handlers responden con `error.message`, lo que puede exponer detalles internos de MySQL.
 
 ### Permisos sobre recursos
-- Varias operaciones reciben identidad mediante campos elegidos por el cliente: por ejemplo, usuario al responder una evaluacion, `profesorUsuario` al crear tarea, o nombre de profesor/alumno por query/header.
-- El handler de intentos de profesor comprueba rol, pero no que la evaluacion/intento pertenezca al profesor autenticado.
-- El handler de respuesta de evaluacion no verifica que el alumno autenticado este matriculado en el curso de la evaluacion.
+- Varias operaciones reciben identidad mediante campos elegidos por el cliente: por ejemplo, usuario al responder/canjear una invitacion, `profesorUsuario` al crear tarea, o nombre de profesor/alumno por query/header.
+- Los servicios `verIntentosProfesor` y `verDetalleIntento` sí restringen la evaluacion al campo `creado_por`; sin embargo, el `profesorUsuario` se deriva de headers/body y no de identidad verificada, por lo que esa comprobacion puede ser falsificada.
+- El envio de respuestas valida que el intento pertenezca al `alumno_id` resuelto, pero ese usuario procede de headers mientras no exista autenticacion. La matricula se comprueba al iniciar el intento, no se vuelve a comprobar al enviarlo.
 - La regla de ultimo administrador cuenta admins activos dentro de una transaccion, pero no serializa solicitudes concurrentes; dos cambios simultaneos podrían superar la comprobacion.
 
 ### Invitaciones numericas
@@ -35,10 +36,11 @@ Este documento describe lo que se observa actualmente en el codigo del backend y
 
 ### Base de datos y arranque
 - Las consultas de valores usan placeholders de `mysql2` en la mayoria de los controladores.
-- `actualizarUsuario` construye dinamicamente nombres de columna desde las claves de `datos`; no aparece conectado a una ruta actual y no debe exponerse sin una lista permitida de columnas.
+- El helper sin referencias `actualizarUsuario`, que construia nombres de columna desde claves de `datos`, fue eliminado en la revision estatica del 2026-10-19.
 - El backend verifica/agrega columnas y tablas auxiliares al arrancar. Un `catch` general solo registra el error y permite continuar, aunque el esquema haya quedado incompleto.
 - La configuracion de la base se lee de `backend/config/.env`; ese archivo no debe compartirse. El `.env.example` contiene placeholders.
-- CORS esta configurado para `http://localhost:5173`, lo cual es una politica de navegador para desarrollo, no autenticacion ni control de acceso.
+- CORS permite `http://localhost:5173` y `http://localhost:5174` para desarrollo; esto es una politica de navegador, no autenticacion ni control de acceso.
+- El arranque de esquema ahora tiene una sola creacion/backfill de `IntentoPregunta`; esa duplicacion se elimino durante la revision estatica.
 
 ## Riesgos prioritarios
 
@@ -79,3 +81,39 @@ Este documento describe lo que se observa actualmente en el codigo del backend y
 ## Notas de alcance
 - El modelo de cursos, turnos, materias, clases y matriculas aun esta en diseño. Antes de persistirlo, definir autorizacion por clase/oferta y comprobar inscripcion en servidor.
 - Este documento es una lista de estado y trabajo pendiente; no implica que las recomendaciones ya esten implementadas.
+
+## Revision comparativa 2026-10-19
+
+### Confirmado en esta revision
+- Siguen vigentes los riesgos P0/P1 ya descritos: contrasenas en texto plano, roles declarados por el cliente, registro con `tipo` controlado por el cliente y rutas sin middleware.
+- Se confirmo que existe una comprobacion de propiedad de la evaluacion en las consultas docentes y del intento por `alumno_id` al responder. Estas comprobaciones no resuelven la falsificacion de identidad porque `req.user` no se establece desde credenciales verificadas.
+- Se confirmo exposicion de `error.message` de errores internos en respuestas 500 y migraciones de arranque que registran errores pero dejan levantar el servidor.
+- La idea de usar una base de datos online queda pospuesta hasta despues de la presentacion. No hay proveedor remoto seleccionado ni configurado.
+
+### Limpiezas completadas
+- Se eliminaron helpers sin referencias (`asignarRolProfesor` y `actualizarUsuario`), estilos de prototipo de alumno sin uso y definiciones duplicadas de `IntentoPregunta` en el arranque y `schema.sql`.
+- Los datos ficticios de resumen/cursos en los dashboards siguen teniendo referencias activas; se consideran fixtures visuales pendientes de reemplazo por datos reales, no codigo muerto confirmado.
+
+### Limites
+- Es un escaneo estatico del codigo fuente y referencias del workspace; no es auditoria de infraestructura, analisis de dependencias, pentest, prueba de concurrencia ni verificacion de permisos con usuarios reales.
+- No se implementaron en esta revision autenticacion, hashing, RBAC verificado, rate limits ni protecciones de red.
+
+## Escaneo de codigo y comparacion 2026-10-19
+
+Alcance: archivos fuente de `backend/src`, `frontend/src`, esquema SQL, paquetes y configuracion visible del proyecto. Se buscaron referencias, handlers, imports, helpers, CSS sin consumidores, datos de demostracion y patrones sensibles. No se inspeccionaron `node_modules`, artefactos compilados, secretos, ni se ejecutaron pruebas de penetracion.
+
+| Hallazgo observado | Comparacion con esta ficha | Prioridad/estado |
+| --- | --- | --- |
+| `autorizarRoles` acepta `x-user-role`, `body.tipo` y `query.tipo`; muchas rutas aceptan usuario por headers/body/query. | Ya estaba registrado y sigue vigente; los headers y el nombre de usuario no son identidad autenticada. | P0 antes de datos reales/exposicion publica. |
+| `POST /login` compara contrasenas en texto plano y no crea sesion/token verificado. | Ya estaba registrado y sigue vigente. | P0. |
+| `GET /usuarios`, `GET /usuarios/:id`, `DELETE /usuarios/:id`, `GET /admin/buscar-usuario`, `GET /db-health` y `GET /tareas/:curso` carecen de RBAC. `GET /panel-alumno` solo compara un rol falsificable. | Actualiza la lista de rutas publicas; `/db-health` y `/panel-alumno` no estaban detallados. | P1; restringir o limitar por entorno. |
+| `verIntentosProfesor`/`verDetalleIntento` comprueban `creado_por`, y la respuesta del alumno comprueba `alumno_id`; la identidad que alimenta esas consultas sigue siendo falsificable. | Corrige el texto anterior: hay filtros de propiedad SQL, pero no una garantia efectiva hasta autenticar la identidad. | P1; resolver autenticacion antes de confiar en ownership. |
+| Handlers 500 devuelven `error.message`; el arranque captura errores de migracion y aun inicia Express. | Ya estaba registrado y sigue vigente. | P1/P2. |
+| El canje de invitaciones numericas no tiene rate limit; no se observaron rate limits en login. | Ya estaba registrado para invitaciones; se amplia a login. | P1/P2. |
+| El frontend fija `http://localhost:3000` en App, admin y alumno; CORS permite solo puertos localhost de Vite. | Hallazgo para cualquier despliegue remoto; no causa un bypass de autenticacion, pero bloquea el despliegue web y no sustituye TLS. | Pendiente antes de despliegue. |
+| Filas, cursos, metricas, actividades y algunas preferencias del dashboard se alimentan de constantes de demostracion. | Son referencias activas y visibles, no codigo muerto confirmado. Deben reemplazarse por consultas reales al implementar esas capacidades. | Pendiente funcional (incluye 9.5 y partes de paneles). |
+| El paquete backend define `start1` identico a `start` y `nodemon` sin script que lo invoque; `frontend/src/components/` esta vacio. | Candidatos de simplificacion confirmados por busqueda de referencias; se registran para decidir limpieza sin cambiar comandos potencialmente usados. | Bajo; no afecta ejecucion actual. |
+| Se elimino `actualizarUsuario` (SQL dinamico y sin callers), `asignarRolProfesor` (sin callers), estilos alumno sin selectores y una segunda migracion/definicion de `IntentoPregunta`. | Limpiezas verificadas en referencias del workspace y build/sintaxis disponible. | Completado. |
+
+## Idea futura: base de datos online
+- Se reconsiderara despues de la presentacion. Hasta entonces, el sistema sigue usando la configuracion MySQL actual; no hay proveedor ni conexion remota que mantener.

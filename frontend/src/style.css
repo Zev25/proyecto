@@ -85,8 +85,14 @@ label {
 .teacher-shell {
   width: 100%;
   max-width: none;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   margin: 0;
-  padding: 1.5rem clamp(1rem, 3vw, 2.5rem) 2.5rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .topbar {
@@ -95,6 +101,51 @@ label {
   align-items: center;
   gap: 1rem;
   margin-bottom: 1.5rem;
+}
+
+.teacher-shell > .teacher-app-header,
+.teacher-shell > .alert {
+  flex: 0 0 auto;
+}
+
+.teacher-app-header {
+  min-height: 59px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 clamp(1rem, 3vw, 2rem);
+  border-bottom: 1px solid #e3e8e4;
+  background: #fff;
+  color: #35443e;
+}
+
+.teacher-app-header__breadcrumb,
+.teacher-app-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.teacher-app-header__breadcrumb {
+  color: #89938e;
+  font-size: 0.76rem;
+}
+
+.teacher-app-header__breadcrumb strong { color: #35443e; font-weight: 600; }
+.teacher-app-header__date { color: #7d8982; font-size: 0.76rem; }
+
+.teacher-shell > .dashboard {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+@media (max-width: 600px) {
+  .teacher-app-header { min-height: 48px; padding: 0 0.9rem; }
+  .teacher-app-header__date { display: none; }
 }
 
 .eyebrow {

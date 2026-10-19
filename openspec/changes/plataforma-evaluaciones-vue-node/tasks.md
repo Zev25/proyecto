@@ -56,6 +56,8 @@
 - [ ] 8.3 Verificar manualmente el comportamiento visual del panel de profesor en ejecucion real y ajustar responsividad o usabilidad segun hallazgos.
 - [x] 8.4 Iniciar el desarrollo visual del panel de administrador siguiendo la nueva linea visual del panel de profesor; prototipo creado y estilo bajo revision.
 - [x] 8.5 Listar evaluaciones del profesor con fecha de creación y fin, e incorporar edición segura antes de que existan intentos.
+- [x] 8.6 Mantener rail docente a altura completa, trasladar el header a la columna principal y habilitar scroll solo para el contenido.
+- [x] 8.7 Añadir acceso al perfil docente desde el avatar y alinear el header con el estilo del administrador.
 
 ## 9. Interfaz del alumno e integracion de actividades
 
@@ -68,3 +70,33 @@
 - [ ] 9.7 Implementar y persistir el cambio de contrasena y las preferencias de notificaciones en el backend.
 - [ ] 9.8 Agregar pruebas de integracion del recorrido alumno y verificar responsive, estados vacios, errores de servidor y permisos.
 - [ ] 9.9 Verificar manualmente el flujo alumno-evaluacion y cerrar la autenticacion antes de validar el aislamiento de resultados.
+
+## 10. Categorias de evaluacion y promedios del alumno
+
+- [x] 10.1 Agregar el tipo `evaluacion` / `examen_final` al modelo, migrar registros existentes como evaluaciones regulares y validar el tipo al crear o actualizar.
+- [x] 10.2 Permitir al profesor consultar y cambiar unicamente la categoria de evaluaciones propias, incluso si ya tienen intentos, sin modificar su historial.
+- [x] 10.3 Separar la navegacion y el listado del alumno en Evaluaciones y Examenes finales, manteniendo el flujo de iniciar, responder y enviar en ambas vistas.
+- [x] 10.4 Calcular la nota de cada intento enviado sobre 10 segun el puntaje maximo seleccionado y mostrar el promedio de todos los intentos completados por categoria; excluir intentos sin enviar.
+- [ ] 10.5 Verificar migracion, aislamiento por rol/propiedad, clasificacion, flujo por categoria, promedios y estados vacios con pruebas disponibles.
+
+## 11. Invitaciones y matriculacion de alumnos
+
+- [x] 11.1 Conectar la pantalla de Invitaciones del administrador con la API para elegir cursos, expiracion y usos, y mostrar/copiar el codigo generado.
+- [x] 11.2 Agregar canje de codigo en Cursos del alumno, mostrar errores del backend y actualizar los cursos de la sesion al confirmar la matricula.
+- [x] 11.3 Documentar el parcial del 22 de octubre de 2026, dejando pendientes la seleccion de partes a presentar y el pulido de esas partes.
+- [ ] 11.4 Verificar creacion/canje, codigos invalidos o vencidos, limite de usos, duplicados y persistencia en una base de pruebas.
+
+## 12. Revision tecnica y despliegue de base de datos
+
+- [x] 12.1 Escanear codigo fuente, retirar helpers/estilos/migracion duplicados verificados como obsoletos y documentar fixtures de demostracion restantes.
+- [x] 12.2 Dejar anotada para despues de la presentacion la idea de evaluar una base de datos online, sin seleccionar proveedor ni migrar datos.
+- [ ] 12.3 Resolver hallazgos P0/P1 de autenticacion, autorizacion, hashing de contrasenas y rutas publicas descritos en `openspec/specs/backend-seguridad.md` antes de exponer la API.
+
+## 13. Catalogo academico persistente
+
+- [ ] 13.1 Crear tablas `Curso`, `OfertaCurso`, `Clase` y `MatriculaOferta`, con migraciones idempotentes y sin sembrar los conteos ficticios actuales.
+- [ ] 13.2 Implementar consulta/creacion de ofertas y clases para admin, validar horarios/cupos y calcular inscritos desde matriculas reales.
+- [ ] 13.3 Sustituir `courseOfferings.js` en vistas admin/docente por catalogo obtenido desde API y mostrar estado vacio cuando no haya ofertas.
+- [ ] 13.4 Conectar invitaciones nuevas a ofertas; canjearlas de forma atomica, respetar duplicados/cupo y conservar soporte para invitaciones existentes por `cursos_json`.
+- [ ] 13.5 Registrar `codigo_legacy` por clase para mantener compatibilidad temporal con tareas/evaluaciones y `UsuarioCurso`.
+- [ ] 13.6 Verificar manualmente alta, listado, carga de clases, canje, cupo y conteo de matriculas en una base de pruebas MySQL.

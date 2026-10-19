@@ -40,6 +40,24 @@
 - El editor docente muestra el conteo de preguntas del banco, marca el campo cuando el sorteo lo supera y bloquea el guardado hasta corregirlo.
 - Se mantiene pendiente la verificacion manual del punto 3.4 en una base de pruebas; esta correccion no la sustituye.
 
+## 2026-10-16
+
+- Se agrega una categoria explicita para separar evaluaciones regulares de examenes finales, con migracion predeterminada de registros existentes a evaluacion regular y reclasificacion docente independiente del historial.
+- El alumno puede realizar ambas categorias desde vistas separadas; cada intento enviado se normaliza sobre 10 y cuenta por separado en el promedio de su categoria. Los intentos sin enviar no se incluyen.
+- Se habilita la interfaz para crear invitaciones de cursos desde administración y canjearlas desde Cursos del alumno, manteniendo validación transaccional de vigencia, cupo y duplicados.
+- Se registra el parcial del 22 de octubre de 2026: se presentarán partes del proyecto; queda pendiente decidir qué mostrar y luego pulir esas partes.
+
+## 2026-10-19
+
+- Se anota como idea futura evaluar una base de datos online despues de la presentacion; no se selecciona proveedor ni se inicia una migracion.
+- Se fija el header docente dentro de la columna principal para mantener la navegacion de rail de borde superior a inferior; el scroll queda en el contenido del main.
+- Se agrega acceso a perfil docente desde el avatar, con retorno a la seccion previa; el header no duplica el cierre de sesion que permanece en el perfil/rail.
+- Se realiza escaneo estatico: se eliminan helpers sin referencias (`asignarRolProfesor`, `actualizarUsuario`), CSS alumno sin selectores en el template y definiciones duplicadas de `IntentoPregunta` en el arranque y schema snapshot.
+- Se actualiza la revision de seguridad: hay filtros SQL de propiedad para intentos, pero no son confiables mientras los usuarios/roles provengan de headers falsificables; se documentan rutas publicas, errores SQL, migraciones, rate limits pendientes y fixtures activos.
+- Se registra que las URLs de API estan fijadas a `localhost:3000` y CORS solo permite origins locales; la configuracion de despliegue queda fuera del trabajo inmediato.
+- Se identifican `start1`, `nodemon` y el directorio vacio `frontend/src/components/` como candidatos de limpieza no bloqueantes; no se eliminan por si forman parte de comandos/estructura que el equipo use.
+- Se decide sustituir `courseOfferings.js` por persistencia normalizada de curso/oferta/clase/matricula. No se precargan sus horarios, cupos ni inscriptos ficticios; nuevas invitaciones usaran IDs de ofertas y los codigos de invitacion existentes por `cursos_json` conservaran compatibilidad.
+
 ## Regla de mantenimiento
 
 - Registrar nuevas decisiones por fecha, indicando contexto breve y efecto en alcance, diseno o tareas.

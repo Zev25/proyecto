@@ -1,6 +1,5 @@
 <script setup>
 import { reactive, ref } from 'vue';
-import { courseOfferings } from './data/courseOfferings.js';
 import AlumnoDashboard from './views/Alumno/alumno.vue';
 import ProfesorPanel from './views/Profesor/profesor.vue';
 import AdminDashboard from './views/Admin/AdminDashboard.vue';
@@ -29,6 +28,11 @@ const session = reactive({
 
 const adminPreview = import.meta.env.DEV && new URLSearchParams(window.location.search).get('preview') === 'admin';
 const teacherPreview = import.meta.env.DEV && new URLSearchParams(window.location.search).get('preview') === 'teacher';
+const fechaHeaderDocente = new Intl.DateTimeFormat('es', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric'
+}).format(new Date());
 
 const authView = ref('login');
 const cargandoLogin = ref(false);
@@ -69,9 +73,6 @@ const login = async () => {
 
     session.logged = true;
     session.user = data.user;
-    if (data.user.tipo !== 'alumno') {
-      okMessage.value = `Bienvenido ${data.user.nombre}`;
-    }
     loginForm.usuario = '';
     loginForm.contrasena = '';
   } catch (e) {
@@ -79,6 +80,15 @@ const login = async () => {
   } finally {
     cargandoLogin.value = false;
   }
+};
+
+const actualizarCursosAlumno = (cursos) => {
+  if (session.user?.tipo !== 'alumno') return;
+  session.user = {
+    ...session.user,
+    curso: cursos[0] || null,
+    cursos
+  };
 };
 
 const registrar = async () => {
@@ -118,8 +128,9 @@ const registrar = async () => {
 // Teacher and evaluation state
 const evalForm = reactive({
   titulo: '',
-  curso: 'frontend',
-  clase: 'redes-software-tarde:1A Frontend',
+  categoria: 'evaluacion',
+  curso: '',
+  clase: '',
   preguntasPorIntento: 20,
   fechaFin: '',
   preguntas: [
@@ -137,6 +148,8 @@ const mensajeImportacionExcel = ref('');
 const estadoImportacionExcel = ref('info');
 const evaluacionesProfesor = ref([]);
 const cargandoEvaluacionesProfesor = ref(false);
+const ofertasProfesor = ref([]);
+const cargandoOfertasProfesor = ref(false);
 const evaluacionEnEdicionId = ref(null);
 const guardandoEvaluacion = ref(false);
 const evaluacionesGuardadas = ref(0);
@@ -145,8 +158,8 @@ const evaluacionesGuardadas = ref(0);
 const tareaForm = reactive({
   titulo: '',
   descripcion: '',
-  curso: 'frontend',
-  clase: 'redes-software-tarde:1A Frontend',
+  curso: '',
+  clase: '',
   fechaVencimiento: ''
 });
 
@@ -163,6 +176,7 @@ const agregarPregunta = () => {
 
 const resetearEvaluacionForm = () => {
   evalForm.titulo = '';
+  evalForm.categoria = 'evaluacion';
   evalForm.curso = 'frontend';
   evalForm.clase = 'redes-software-tarde:1A Frontend';
   evalForm.preguntasPorIntento = 20;
@@ -195,6 +209,46 @@ const cargarEvaluacionesProfesor = async () => {
   }
 };
 
+const cargarOfertasProfesor = async () => {
+  cargandoOfertasProfesor.value = true;
+
+  try {
+    const response = await fetch('http://localhost:3000/profesor/ofertas', {
+      headers: {
+        'x-user-role': 'profesor',
+        'x-user-name': session.user?.usuario || 'profesor-demo'
+      }
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'No se pudieron cargar las ofertas');
+    ofertasProfesor.value = data.data || [];
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    cargandoOfertasProfesor.value = false;
+  }
+};
+
+const actualizarCategoriaEvaluacion = async ({ evaluacionId, categoria }) => {
+  try {
+    const response = await fetch(`http://localhost:3000/profesor/evaluaciones/${evaluacionId}/categoria`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-role': 'profesor',
+        'x-user-name': session.user?.usuario || 'profesor-demo'
+      },
+      body: JSON.stringify({ categoria })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'No se pudo cambiar la categoría');
+    okMessage.value = 'Categoría actualizada';
+    await cargarEvaluacionesProfesor();
+  } catch (e) {
+    error.value = e.message;
+  }
+};
+
 const editarEvaluacionProfesor = async (evaluacionId) => {
   limpiarMensajes();
 
@@ -209,8 +263,9 @@ const editarEvaluacionProfesor = async (evaluacionId) => {
     if (!response.ok) throw new Error(data.error || 'No se pudo abrir la evaluación');
 
     evalForm.titulo = data.data.titulo;
+    evalForm.categoria = data.data.categoria || 'evaluacion';
     evalForm.curso = data.data.curso || '';
-    const claseGuardada = courseOfferings
+    const claseGuardada = ofertasProfesor.value
       .flatMap((oferta) => oferta.classes.map((clase) => ({
         value: `${oferta.id}:${clase.name}`,
         legacyCourse: clase.legacyCourse
@@ -252,6 +307,7 @@ const crearEvaluacionProfesor = async () => {
         tipo: 'profesor',
         usuario: session.user?.usuario,
         titulo: evalForm.titulo,
+        categoria: evalForm.categoria,
         curso: evalForm.curso,
         preguntasPorIntento: evalForm.preguntasPorIntento,
         fechaFin: evalForm.fechaFin || null,
@@ -461,25 +517,6 @@ const crearTareaProfesor = async () => {
     </template>
 
     <template v-else>
-      <header v-if="teacherPreview || (!adminPreview && session.user?.tipo === 'profesor')" class="topbar">
-        <div>
-          <p class="eyebrow">{{ teacherPreview || session.user?.tipo === 'profesor' ? 'Espacio docente' : 'Plataforma educativa' }}</p>
-          <h1>{{ teacherPreview || session.user?.tipo === 'profesor' ? 'Panel docente' : 'Panel por perfiles' }}</h1>
-        </div>
-
-        <button class="secondary" @click="cerrarSesion">
-          Cerrar sesión
-        </button>
-      </header>
-
-      <section v-if="error && (teacherPreview || session.user?.tipo === 'profesor')" class="alert error">
-        {{ error }}
-      </section>
-
-      <section v-if="okMessage && (teacherPreview || session.user?.tipo === 'profesor')" class="alert success">
-        {{ okMessage }}
-      </section>
-
       <AdminDashboard
         v-if="adminPreview || session.user?.tipo === 'admin'"
         :user="adminPreview ? { nombre: 'Vista previa', usuario: 'ADMIN', tipo: 'admin' } : session.user"
@@ -489,11 +526,18 @@ const crearTareaProfesor = async () => {
       <AlumnoDashboard
         v-else-if="session.user?.tipo === 'alumno'"
         :user="session.user"
+        @cursos-actualizados="actualizarCursosAlumno"
         @logout="cerrarSesion"
       />
 
       <div v-else-if="teacherPreview || session.user?.tipo === 'profesor'" class="dashboard">
         <ProfesorPanel
+          :user="teacherPreview ? { nombre: 'Vista previa', usuario: 'profesor-demo' } : session.user"
+          :ofertas="ofertasProfesor"
+          :cargando-ofertas="cargandoOfertasProfesor"
+          :header-date="fechaHeaderDocente"
+          :error-message="error"
+          :success-message="okMessage"
           :eval-form="evalForm"
           :tarea-form="tareaForm"
           :importando-excel="importandoExcelEvaluacion"
@@ -510,9 +554,12 @@ const crearTareaProfesor = async () => {
           @importar-evaluacion-excel="importarEvaluacionExcelProfesor"
           @limpiar-importacion-excel="limpiarEstadoImportacionExcel"
           @cargar-evaluaciones="cargarEvaluacionesProfesor"
+          @cargar-ofertas="cargarOfertasProfesor"
           @editar-evaluacion="editarEvaluacionProfesor"
+                    @actualizar-categoria-evaluacion="actualizarCategoriaEvaluacion"
           @cancelar-edicion-evaluacion="cancelarEdicionEvaluacion"
           @crear-tarea="crearTareaProfesor"
+                    @logout="cerrarSesion"
         />
       </div>
     </template>

@@ -21,6 +21,7 @@ import {
   listarEvaluacionesProfesor,
   obtenerEvaluacionProfesor,
   actualizarEvaluacionProfesor,
+  actualizarCategoriaEvaluacionProfesor,
   iniciarIntentoAleatorio,
   responderEvaluacionAuto,
   verIntentosProfesor,
@@ -56,6 +57,7 @@ import {
   canjearInvitacionCursoAlumno,
   crearInvitacionCursoAdmin
 } from './controladores/invitaciones.js';
+import { crearOfertaAcademica, listarOfertasAcademicas, listarOfertasAlumno } from './controladores/ofertas.js';
 
 const cargarExcelEvaluacion = multer({
   storage: multer.memoryStorage(),
@@ -133,6 +135,18 @@ const asegurarEstadoUsuario = async () => {
       await conexion.query('ALTER TABLE Evaluacion ADD COLUMN fecha_fin DATE DEFAULT NULL AFTER preguntas_por_intento');
     }
 
+    const [columnaCategoriaEvaluacion] = await conexion.query(
+      `SELECT COUNT(*) AS total
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'Evaluacion'
+         AND COLUMN_NAME = 'categoria'`
+    );
+
+    if (Number(columnaCategoriaEvaluacion?.[0]?.total || 0) === 0) {
+      await conexion.query("ALTER TABLE Evaluacion ADD COLUMN categoria ENUM('evaluacion', 'examen_final') NOT NULL DEFAULT 'evaluacion' AFTER fecha_fin");
+    }
+
     const [columnasEmail] = await conexion.query(
       `SELECT COUNT(*) AS total
        FROM information_schema.COLUMNS
@@ -173,6 +187,116 @@ const asegurarEstadoUsuario = async () => {
        SELECT id, curso
        FROM Usuario
        WHERE tipo = 'alumno' AND curso IS NOT NULL AND TRIM(curso) <> ''`
+    );
+
+    await conexion.query(
+      `CREATE TABLE IF NOT EXISTS Curso (
+        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(100) NOT NULL,
+        activo TINYINT(1) NOT NULL DEFAULT 1,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_curso_nombre (nombre)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    );
+
+    await conexion.query(
+      `CREATE TABLE IF NOT EXISTS OfertaCurso (
+        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        curso_id INT NOT NULL,
+        turno VARCHAR(30) NOT NULL,
+        hora_inicio TIME NOT NULL,
+        hora_fin TIME NOT NULL,
+        cupo_maximo INT NOT NULL,
+        activa TINYINT(1) NOT NULL DEFAULT 1,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_oferta_curso_turno (curso_id, turno),
+        KEY idx_oferta_curso_activa (activa),
+        CONSTRAINT fk_oferta_curso FOREIGN KEY (curso_id) REFERENCES Curso(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    );
+
+    await conexion.query(
+      `CREATE TABLE IF NOT EXISTS Clase (
+        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        oferta_id INT NOT NULL,
+        materia VARCHAR(100) NOT NULL,
+        nombre VARCHAR(100) NOT NULL,
+        modalidad ENUM('semanal', 'entregas') NOT NULL DEFAULT 'semanal',
+        horario VARCHAR(150) DEFAULT NULL,
+        codigo_legacy VARCHAR(100) DEFAULT NULL,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_clase_oferta_nombre (oferta_id, nombre),
+        KEY idx_clase_codigo_legacy (codigo_legacy),
+        CONSTRAINT fk_clase_oferta FOREIGN KEY (oferta_id) REFERENCES OfertaCurso(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    );
+
+    await conexion.query(
+      `CREATE TABLE IF NOT EXISTS MatriculaOferta (
+        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        usuario_id INT NOT NULL,
+        oferta_id INT NOT NULL,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_matricula_usuario_oferta (usuario_id, oferta_id),
+        KEY idx_matricula_oferta (oferta_id),
+        CONSTRAINT fk_matricula_usuario FOREIGN KEY (usuario_id) REFERENCES Usuario(id) ON DELETE CASCADE,
+        CONSTRAINT fk_matricula_oferta FOREIGN KEY (oferta_id) REFERENCES OfertaCurso(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    );
+
+    await conexion.query(
+      `CREATE TABLE IF NOT EXISTS Curso (
+        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(100) NOT NULL,
+        activo TINYINT(1) NOT NULL DEFAULT 1,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_curso_nombre (nombre)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    );
+
+    await conexion.query(
+      `CREATE TABLE IF NOT EXISTS OfertaCurso (
+        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        curso_id INT NOT NULL,
+        turno VARCHAR(30) NOT NULL,
+        hora_inicio TIME NOT NULL,
+        hora_fin TIME NOT NULL,
+        cupo_maximo INT NOT NULL,
+        activa TINYINT(1) NOT NULL DEFAULT 1,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_oferta_curso_turno (curso_id, turno),
+        KEY idx_oferta_curso_activa (activa),
+        CONSTRAINT fk_oferta_curso FOREIGN KEY (curso_id) REFERENCES Curso(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    );
+
+    await conexion.query(
+      `CREATE TABLE IF NOT EXISTS Clase (
+        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        oferta_id INT NOT NULL,
+        materia VARCHAR(100) NOT NULL,
+        nombre VARCHAR(100) NOT NULL,
+        modalidad ENUM('semanal', 'entregas') NOT NULL DEFAULT 'semanal',
+        horario VARCHAR(150) DEFAULT NULL,
+        codigo_legacy VARCHAR(100) DEFAULT NULL,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_clase_oferta_nombre (oferta_id, nombre),
+        KEY idx_clase_codigo_legacy (codigo_legacy),
+        CONSTRAINT fk_clase_oferta FOREIGN KEY (oferta_id) REFERENCES OfertaCurso(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    );
+
+    await conexion.query(
+      `CREATE TABLE IF NOT EXISTS MatriculaOferta (
+        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        usuario_id INT NOT NULL,
+        oferta_id INT NOT NULL,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_matricula_usuario_oferta (usuario_id, oferta_id),
+        KEY idx_matricula_oferta (oferta_id),
+        CONSTRAINT fk_matricula_usuario FOREIGN KEY (usuario_id) REFERENCES Usuario(id) ON DELETE CASCADE,
+        CONSTRAINT fk_matricula_oferta FOREIGN KEY (oferta_id) REFERENCES OfertaCurso(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
     );
 
     const [columnasAlumnoIntento] = await conexion.query(
@@ -232,25 +356,6 @@ const asegurarEstadoUsuario = async () => {
     );
 
     await conexion.query(
-      `CREATE TABLE IF NOT EXISTS IntentoPregunta (
-        intento_id INT NOT NULL,
-        pregunta_id INT NOT NULL,
-        orden SMALLINT UNSIGNED NOT NULL,
-        PRIMARY KEY (intento_id, pregunta_id),
-        UNIQUE KEY uq_intento_pregunta_orden (intento_id, orden),
-        CONSTRAINT fk_intentopregunta_intento FOREIGN KEY (intento_id) REFERENCES Intento(id) ON DELETE CASCADE,
-        CONSTRAINT fk_intentopregunta_pregunta FOREIGN KEY (pregunta_id) REFERENCES Pregunta(id) ON DELETE CASCADE
-      )`
-    );
-
-    await conexion.query(
-      `INSERT IGNORE INTO IntentoPregunta (intento_id, pregunta_id, orden)
-       SELECT intento_id, pregunta_id,
-              ROW_NUMBER() OVER (PARTITION BY intento_id ORDER BY id)
-       FROM Respuesta`
-    );
-
-    await conexion.query(
       `CREATE TABLE IF NOT EXISTS InvitacionCurso (
         id INT AUTO_INCREMENT PRIMARY KEY,
         codigo_hash CHAR(64) NOT NULL,
@@ -265,6 +370,17 @@ const asegurarEstadoUsuario = async () => {
         UNIQUE KEY uq_invitacion_codigo_hash (codigo_hash)
       )`
     );
+
+    const [columnaOfertasInvitacion] = await conexion.query(
+      `SELECT COUNT(*) AS total
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'InvitacionCurso'
+         AND COLUMN_NAME = 'oferta_ids_json'`
+    );
+    if (Number(columnaOfertasInvitacion?.[0]?.total || 0) === 0) {
+      await conexion.query('ALTER TABLE InvitacionCurso ADD COLUMN oferta_ids_json TEXT NULL AFTER cursos_json');
+    }
 
     await conexion.query(
       `CREATE TABLE IF NOT EXISTS InvitacionCursoCanje (
@@ -459,6 +575,49 @@ router.post('/login', async (req,res) => {
 
 
 // Admin routes
+router.get('/admin/ofertas', autorizarRoles('admin'), async (_req, res) => {
+  try {
+    const data = await listarOfertasAcademicas();
+    return res.json({ ok: true, total: data.length, data });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No se pudieron listar las ofertas', message: error.message });
+  }
+});
+
+router.get('/profesor/ofertas', autorizarRoles('profesor'), async (_req, res) => {
+  try {
+    const data = await listarOfertasAcademicas();
+    return res.json({ ok: true, total: data.length, data });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No se pudieron listar las ofertas', message: error.message });
+  }
+});
+
+router.post('/admin/ofertas', autorizarRoles('admin'), async (req, res) => {
+  const { curso, turno, horaInicio, horaFin, cupoMaximo, clases } = req.body || {};
+
+  try {
+    const result = await crearOfertaAcademica({ curso, turno, horaInicio, horaFin, cupoMaximo, clases });
+    if (!result.ok) {
+      const mensajes = {
+        CURSO_REQUERIDO: 'Indica el nombre del curso',
+        TURNO_REQUERIDO: 'Indica el turno',
+        HORARIO_INVALIDO: 'El horario debe ser válido y la hora de fin posterior al inicio',
+        CUPO_INVALIDO: 'El cupo máximo debe ser un entero positivo',
+        CLASES_INVALIDAS: 'La oferta debe incluir entre 1 y 50 clases',
+        CLASE_INVALIDA: 'Revisa materia, nombre, modalidad y horario de cada clase',
+        CLASE_DUPLICADA: 'Los nombres de clase no pueden repetirse en la misma oferta',
+        OFERTA_DUPLICADA: 'Ya existe una oferta para ese curso y turno'
+      };
+      return res.status(400).json({ ok: false, error: mensajes[result.code] || 'La oferta no es válida', code: result.code });
+    }
+
+    return res.status(201).json({ ok: true, message: 'Oferta creada', ofertaId: result.ofertaId });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No se pudo crear la oferta', message: error.message });
+  }
+});
+
 router.get('/admin/buscar-usuario', async (req, res) => {
   const { usuario } = req.query || {};
 
@@ -641,22 +800,26 @@ router.patch('/admin/usuarios/:usuario/estado', autorizarRoles('admin'), async (
 });
 
 router.post('/admin/invitaciones/cursos', autorizarRoles('admin'), async (req, res) => {
-  const { cursos, expiraEnHoras, cupoMaximo, adminUsuario } = req.body || {};
+  const { cursos, ofertaIds, expiraEnHoras, cupoMaximo, adminUsuario } = req.body || {};
 
   try {
     const result = await crearInvitacionCursoAdmin({
       adminUsuario: adminUsuario || req.headers['x-user-name'] || null,
       cursos,
+      ofertaIds,
       expiraEnHoras,
       cupoMaximo
     });
 
     if (!result.ok) {
-      if (result.code === 'CURSOS_REQUERIDOS') {
-        return res.status(400).json({ ok: false, error: 'Debes enviar al menos un curso' });
+      if (result.code === 'CURSOS_O_OFERTAS_REQUERIDOS') {
+        return res.status(400).json({ ok: false, error: 'Selecciona al menos una oferta o curso' });
       }
       if (result.code === 'CURSO_INVALIDO') {
         return res.status(400).json({ ok: false, error: 'Curso inválido', permitidos: CURSOS_VALIDOS });
+      }
+      if (result.code === 'OFERTAS_INVALIDAS') {
+        return res.status(400).json({ ok: false, error: 'Una o más ofertas no existen o están inactivas' });
       }
 
       return res.status(500).json({ ok: false, error: 'No se pudo generar código de invitación', code: result.code });
@@ -708,7 +871,7 @@ router.get('/panel-admin', autorizarRoles('admin'), (req, res) => {
 // rutas para evaluaciones
 
 router.post('/profesor/evaluaciones', autorizarRoles('profesor'), async (req, res) => {
-  const { titulo, curso, preguntas, preguntasPorIntento, fechaFin } = req.body || {};
+  const { titulo, curso, preguntas, preguntasPorIntento, fechaFin, categoria } = req.body || {};
 
   if (!titulo || !curso || !Array.isArray(preguntas) || preguntas.length === 0 || preguntas.length > 50) {
     return res.status(400).json({ ok: false, error: 'Debes enviar un título, curso y entre 1 y 50 preguntas' });
@@ -725,7 +888,8 @@ router.post('/profesor/evaluaciones', autorizarRoles('profesor'), async (req, re
       profesorUsuario,
       preguntas,
       preguntasPorIntento,
-      fechaFin: fechaFin || null
+      fechaFin: fechaFin || null,
+      categoria
     });
 
     if (!result.ok) {
@@ -734,6 +898,7 @@ router.post('/profesor/evaluaciones', autorizarRoles('profesor'), async (req, re
       if (result.code === 'CANTIDAD_INTENTO_INVALIDA') return res.status(400).json({ ok: false, error: 'La cantidad de preguntas por intento debe estar entre 1 y 50' });
       if (result.code === 'CANTIDAD_INTENTO_SUPERA_BANCO') return res.status(400).json({ ok: false, error: `La cantidad por intento no puede superar las ${preguntas.length} preguntas del banco` });
       if (result.code === 'PREGUNTAS_INVALIDAS') return res.status(400).json({ ok: false, error: 'Cada pregunta debe tener enunciado, respuesta correcta y puntaje válido' });
+      if (result.code === 'CATEGORIA_INVALIDA') return res.status(400).json({ ok: false, error: 'La categoría debe ser evaluación o examen final' });
     }
 
     return res.status(201).json({ ok: true, message: 'Evaluacion creada', evaluacionId: result.evaluacionId });
@@ -751,6 +916,26 @@ router.get('/profesor/evaluaciones', autorizarRoles('profesor'), async (req, res
     return res.json({ ok: true, data });
   } catch (error) {
     return res.status(500).json({ ok: false, error: 'No se pudieron listar las evaluaciones', message: error.message });
+  }
+});
+
+router.patch('/profesor/evaluaciones/:id/categoria', autorizarRoles('profesor'), async (req, res) => {
+  const evaluacionId = Number(req.params.id);
+  const profesorUsuario = req.headers['x-user-name'] || req.body?.usuario;
+  const { categoria } = req.body || {};
+
+  if (!Number.isInteger(evaluacionId) || evaluacionId <= 0) {
+    return res.status(400).json({ ok: false, error: 'ID de evaluación inválido' });
+  }
+  if (!profesorUsuario) return res.status(400).json({ ok: false, error: 'Falta identificar al profesor' });
+
+  try {
+    const result = await actualizarCategoriaEvaluacionProfesor({ evaluacionId, profesorUsuario, categoria });
+    if (result.code === 'CATEGORIA_INVALIDA') return res.status(400).json({ ok: false, error: 'La categoría debe ser evaluación o examen final' });
+    if (!result.ok) return res.status(404).json({ ok: false, error: 'Evaluación no encontrada' });
+    return res.json({ ok: true, message: 'Categoría actualizada' });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No se pudo cambiar la categoría', message: error.message });
   }
 });
 
@@ -774,7 +959,7 @@ router.get('/profesor/evaluaciones/:id', autorizarRoles('profesor'), async (req,
 
 router.put('/profesor/evaluaciones/:id', autorizarRoles('profesor'), async (req, res) => {
   const evaluacionId = Number(req.params.id);
-  const { titulo, curso, preguntas, preguntasPorIntento, fechaFin } = req.body || {};
+  const { titulo, curso, preguntas, preguntasPorIntento, fechaFin, categoria } = req.body || {};
   const profesorUsuario = req.headers['x-user-name'] || req.body?.usuario;
 
   if (!Number.isInteger(evaluacionId) || evaluacionId <= 0) {
@@ -795,7 +980,8 @@ router.put('/profesor/evaluaciones/:id', autorizarRoles('profesor'), async (req,
       curso,
       preguntas,
       preguntasPorIntento,
-      fechaFin: fechaFin || null
+      fechaFin: fechaFin || null,
+      categoria
     });
     if (!result.ok) {
       if (result.code === 'EVALUACION_NO_ENCONTRADA') return res.status(404).json({ ok: false, error: 'Evaluación no encontrada' });
@@ -805,6 +991,7 @@ router.put('/profesor/evaluaciones/:id', autorizarRoles('profesor'), async (req,
       if (result.code === 'CANTIDAD_INTENTO_INVALIDA') return res.status(400).json({ ok: false, error: 'La cantidad de preguntas por intento debe estar entre 1 y 50' });
       if (result.code === 'CANTIDAD_INTENTO_SUPERA_BANCO') return res.status(400).json({ ok: false, error: `La cantidad por intento no puede superar las ${preguntas.length} preguntas del banco` });
       if (result.code === 'PREGUNTAS_INVALIDAS') return res.status(400).json({ ok: false, error: 'Cada pregunta debe tener enunciado, respuesta correcta y puntaje válido' });
+      if (result.code === 'CATEGORIA_INVALIDA') return res.status(400).json({ ok: false, error: 'La categoría debe ser evaluación o examen final' });
     }
     return res.json({ ok: true, message: 'Evaluación actualizada', evaluacionId });
   } catch (error) {
@@ -861,6 +1048,24 @@ router.get('/alumno/evaluaciones', autorizarRoles('alumno'), async (req, res) =>
     return res.json({ ok: true, total: data.length, data });
   } catch (error) {
     return res.status(500).json({ ok: false, error: 'No se pudieron listar evaluaciones', message: error.message });
+  }
+});
+
+router.get('/alumno/ofertas', autorizarRoles('alumno'), async (req, res) => {
+  const alumnoUsuario = req.user?.usuario || req.headers['x-user-name'] || req.query?.usuario;
+  if (!alumnoUsuario) return res.status(400).json({ ok: false, error: 'Debes enviar usuario' });
+
+  try {
+    const result = await listarOfertasAlumno(alumnoUsuario);
+    if (!result.ok && result.code === 'ALUMNO_NO_ENCONTRADO') {
+      return res.status(404).json({ ok: false, error: 'Alumno no encontrado' });
+    }
+    if (!result.ok && result.code === 'ALUMNO_NO_ACTIVO') {
+      return res.status(403).json({ ok: false, error: 'Alumno inactivo o bloqueado' });
+    }
+    return res.json({ ok: true, total: result.ofertas.length, data: result.ofertas });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No se pudieron listar las ofertas del alumno', message: error.message });
   }
 });
 
@@ -1036,6 +1241,8 @@ router.post('/alumno/invitaciones/canjear', autorizarRoles('alumno'), async (req
       if (result.code === 'CODIGO_INVALIDO') return res.status(404).json({ ok: false, error: 'Código inválido' });
       if (result.code === 'CODIGO_EXPIRADO') return res.status(410).json({ ok: false, error: 'Código expirado' });
       if (result.code === 'SIN_CUPOS') return res.status(409).json({ ok: false, error: 'Código sin cupos disponibles' });
+      if (result.code === 'OFERTA_SIN_CUPOS') return res.status(409).json({ ok: false, error: `La oferta ${result.curso} · ${result.turno} ya no tiene cupos disponibles` });
+      if (result.code === 'OFERTA_INVALIDA') return res.status(409).json({ ok: false, error: 'Una oferta de la invitación ya no está activa' });
       if (result.code === 'YA_CANJEADO') return res.status(409).json({ ok: false, error: 'Este código ya fue canjeado por este alumno' });
       if (result.code === 'YA_INSCRITO') return res.status(409).json({ ok: false, error: 'Alumno ya inscrito en todos los cursos de la invitación' });
       if (result.code === 'ALUMNO_NO_ENCONTRADO') return res.status(404).json({ ok: false, error: 'Alumno no encontrado' });

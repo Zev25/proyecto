@@ -101,32 +101,9 @@ const borrarUsuario = async (id) => {
     }
 };
 
-/**
- * Actualizar un usuario por ID
- * @param {number} id - ID del usuario
- * @param {Object} datos - Campos a actualizar (ej: { nombre, apellido, usuario, contrasena, tipo })
- * @returns {Promise<Object>} - Resultado de la actualización
- */
-const actualizarUsuario = async (id, datos) => {
-    const connection = await conexion.getConnection();
-    try {
-        const keys = Object.keys(datos);
-        const setClause = keys.map((key) => `${key} = ?`).join(', ');
-        const values = keys.map((key) => datos[key]);
-        values.push(id);
-
-        const query = `UPDATE Usuario SET ${setClause} WHERE id = ?`;
-        const [result] = await connection.query(query, values);
-        return result;
-    } finally {
-        connection.release();
-    }
-};
-
 export {
     crearUsuario,
     obtenerUsuarios,
     obtenerUsuarioPorId,
-    borrarUsuario,
-    actualizarUsuario
+    borrarUsuario
 };

@@ -28,3 +28,14 @@ El sistema MUST permitir al profesor consultar resultados agregados y por intent
 #### Scenario: Profesor revisa resultados de su evaluacion
 - **WHEN** un profesor abre la vista de resultados de una evaluacion propia
 - **THEN** el sistema presenta listado de intentos y resultados asociados
+
+### Requirement: Promedio de evaluaciones visible al alumno
+El sistema MUST mostrar al alumno el promedio de sus intentos completados por categoria, calculado sobre una escala de 10 y sin incluir intentos sin enviar.
+
+#### Scenario: Alumno consulta un promedio con varios intentos
+- **WHEN** el alumno tiene intentos completados de evaluaciones regulares o examenes finales
+- **THEN** el sistema normaliza cada intento segun el puntaje maximo de las preguntas seleccionadas, incluye cada intento por separado y muestra el promedio de cada categoria sobre 10
+
+#### Scenario: Alumno aun no completa intentos de una categoria
+- **WHEN** el alumno consulta una categoria sin intentos completados
+- **THEN** el sistema muestra un estado sin calificaciones y no presenta un promedio ficticio

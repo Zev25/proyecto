@@ -2,6 +2,7 @@ import { conexion } from '../db.js';
 
 const LIMITE_BANCO_PREGUNTAS = 50;
 const PREGUNTAS_POR_INTENTO_DEFAULT = 20;
+const CATEGORIAS_EVALUACION = new Set(['evaluacion', 'examen_final']);
 
 const normalizar = (txt) => String(txt ?? '').trim().toLowerCase();
 
@@ -11,8 +12,11 @@ const crearEvaluacionConPreguntas = async ({
   profesorUsuario,
   preguntas,
   preguntasPorIntento = PREGUNTAS_POR_INTENTO_DEFAULT,
-  fechaFin = null
+  fechaFin = null,
+  categoria = 'evaluacion'
 }) => {
+  if (!CATEGORIAS_EVALUACION.has(categoria)) return { ok: false, code: 'CATEGORIA_INVALIDA' };
+
   if (!Array.isArray(preguntas) || preguntas.length === 0) {
     return { ok: false, code: 'BANCO_VACIO' };
   }
@@ -51,9 +55,9 @@ const crearEvaluacionConPreguntas = async ({
 
     const [evalResult] = await connection.query(
       `INSERT INTO Evaluacion
-        (titulo, curso, creado_por, max_preguntas, preguntas_por_intento, fecha_fin)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [titulo, curso || null, profesorUsuario, LIMITE_BANCO_PREGUNTAS, Number(preguntasPorIntento), fechaFin]
+        (titulo, curso, creado_por, max_preguntas, preguntas_por_intento, fecha_fin, categoria)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [titulo, curso || null, profesorUsuario, LIMITE_BANCO_PREGUNTAS, Number(preguntasPorIntento), fechaFin, categoria]
     );
 
     const evaluacionId = evalResult.insertId;
@@ -99,7 +103,7 @@ const listarEvaluacionesDisponibles = async (cursos = null) => {
       : '';
 
     const [evaluaciones] = await connection.query(
-      `SELECT id, titulo, curso, creado_por, max_preguntas, preguntas_por_intento
+      `SELECT id, titulo, curso, creado_por, max_preguntas, preguntas_por_intento, categoria
        FROM Evaluacion
        ${whereCursos}
        ORDER BY id DESC`,
@@ -117,7 +121,7 @@ const listarEvaluacionesProfesor = async (profesorUsuario) => {
 
   try {
     const [evaluaciones] = await connection.query(
-      `SELECT e.id, e.titulo, e.curso, e.preguntas_por_intento,
+      `SELECT e.id, e.titulo, e.curso, e.categoria, e.preguntas_por_intento,
               e.created_at, DATE_FORMAT(e.fecha_fin, '%Y-%m-%d') AS fecha_fin,
               COUNT(i.id) AS intentos
        FROM Evaluacion e
@@ -142,7 +146,7 @@ const obtenerEvaluacionProfesor = async ({ evaluacionId, profesorUsuario }) => {
 
   try {
     const [evaluaciones] = await connection.query(
-      `SELECT id, titulo, curso, preguntas_por_intento,
+      `SELECT id, titulo, curso, categoria, preguntas_por_intento,
               DATE_FORMAT(fecha_fin, '%Y-%m-%d') AS fecha_fin
        FROM Evaluacion
        WHERE id = ? AND creado_por = ?
@@ -185,8 +189,11 @@ const actualizarEvaluacionProfesor = async ({
   curso,
   preguntas,
   preguntasPorIntento,
-  fechaFin = null
+  fechaFin = null,
+  categoria = 'evaluacion'
 }) => {
+  if (!CATEGORIAS_EVALUACION.has(categoria)) return { ok: false, code: 'CATEGORIA_INVALIDA' };
+
   if (!Array.isArray(preguntas) || preguntas.length === 0) return { ok: false, code: 'BANCO_VACIO' };
   if (preguntas.length > LIMITE_BANCO_PREGUNTAS) return { ok: false, code: 'BANCO_SUPERA_LIMITE' };
   if (!Number.isInteger(Number(preguntasPorIntento))
@@ -234,9 +241,9 @@ const actualizarEvaluacionProfesor = async ({
 
     await connection.query(
       `UPDATE Evaluacion
-       SET titulo = ?, curso = ?, preguntas_por_intento = ?, fecha_fin = ?
+        SET titulo = ?, curso = ?, preguntas_por_intento = ?, fecha_fin = ?, categoria = ?
        WHERE id = ? AND creado_por = ?`,
-      [titulo, curso || null, Number(preguntasPorIntento), fechaFin, evaluacionId, profesorUsuario]
+            [titulo, curso || null, Number(preguntasPorIntento), fechaFin, categoria, evaluacionId, profesorUsuario]
     );
     await connection.query('DELETE FROM Pregunta WHERE evaluacion_id = ?', [evaluacionId]);
 
@@ -259,6 +266,28 @@ const actualizarEvaluacionProfesor = async ({
   } catch (error) {
     await connection.rollback();
     throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+const actualizarCategoriaEvaluacionProfesor = async ({ evaluacionId, profesorUsuario, categoria }) => {
+  if (!CATEGORIAS_EVALUACION.has(categoria)) return { ok: false, code: 'CATEGORIA_INVALIDA' };
+
+  const connection = await conexion.getConnection();
+
+  try {
+    const [evaluaciones] = await connection.query(
+      'SELECT id FROM Evaluacion WHERE id = ? AND creado_por = ? LIMIT 1',
+      [evaluacionId, profesorUsuario]
+    );
+    if (!evaluaciones[0]) return { ok: false, code: 'EVALUACION_NO_ENCONTRADA' };
+
+    await connection.query(
+      'UPDATE Evaluacion SET categoria = ? WHERE id = ? AND creado_por = ?',
+      [categoria, evaluacionId, profesorUsuario]
+    );
+    return { ok: true };
   } finally {
     connection.release();
   }
@@ -458,6 +487,7 @@ const responderEvaluacionAuto = async ({ intentoId, evaluacionId, alumnoUsuario,
     }
 
     const mapaPreguntas = new Map(preguntasSeleccionadas.map((pregunta) => [pregunta.id, pregunta]));
+    const puntajeMaximo = preguntasSeleccionadas.reduce((total, pregunta) => total + Number(pregunta.puntos), 0);
     let notaTotal = 0;
 
     for (const respuesta of respuestas) {
@@ -478,7 +508,14 @@ const responderEvaluacionAuto = async ({ intentoId, evaluacionId, alumnoUsuario,
     );
 
     await connection.commit();
-    return { ok: true, intentoId, notaTotal };
+    return {
+      ok: true,
+      intentoId,
+      notaTotal,
+      notaSobreDiez: puntajeMaximo > 0
+        ? Math.round((notaTotal / puntajeMaximo) * 1000) / 100
+        : 0
+    };
   } catch (error) {
     await connection.rollback();
     throw error;
@@ -549,6 +586,7 @@ export {
   listarEvaluacionesProfesor,
   obtenerEvaluacionProfesor,
   actualizarEvaluacionProfesor,
+  actualizarCategoriaEvaluacionProfesor,
   iniciarIntentoAleatorio,
   responderEvaluacionAuto,
   verIntentosProfesor,

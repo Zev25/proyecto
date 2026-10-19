@@ -13,6 +13,26 @@ const normalizarCursos = (entrada) => {
   return [...new Set(cursos)];
 };
 
+const normalizarOfertaIds = (entrada) => {
+  if (!Array.isArray(entrada)) return [];
+  const ids = entrada.map(Number).filter((id) => Number.isInteger(id) && id > 0);
+  return [...new Set(ids)];
+};
+
+const obtenerOfertasActivas = async (connection, ofertaIds, bloquear = false) => {
+  if (ofertaIds.length === 0) return [];
+  const placeholders = ofertaIds.map(() => '?').join(', ');
+  const [rows] = await connection.query(
+    `SELECT o.id, o.turno, o.cupo_maximo, c.nombre AS curso
+     FROM OfertaCurso o
+     JOIN Curso c ON c.id = o.curso_id
+     WHERE o.id IN (${placeholders}) AND o.activa = 1 AND c.activo = 1
+     ORDER BY o.id ASC${bloquear ? ' FOR UPDATE' : ''}`,
+    ofertaIds
+  );
+  return rows;
+};
+
 const generarCodigoNumerico = () => {
   let codigo = '';
   for (let i = 0; i < DIGITOS_CODIGO; i += 1) {
@@ -63,11 +83,12 @@ const obtenerCursosAlumno = async (connection, usuario) => {
   };
 };
 
-const crearInvitacionCursoAdmin = async ({ adminUsuario, cursos, expiraEnHoras, cupoMaximo }) => {
+const crearInvitacionCursoAdmin = async ({ adminUsuario, cursos, ofertaIds, expiraEnHoras, cupoMaximo }) => {
   const cursosNormalizados = normalizarCursos(cursos);
+  const ofertaIdsNormalizados = normalizarOfertaIds(ofertaIds);
 
-  if (cursosNormalizados.length === 0) {
-    return { ok: false, code: 'CURSOS_REQUERIDOS' };
+  if (cursosNormalizados.length === 0 && ofertaIdsNormalizados.length === 0) {
+    return { ok: false, code: 'CURSOS_O_OFERTAS_REQUERIDOS' };
   }
 
   const cursoInvalido = cursosNormalizados.find((curso) => !CURSOS_VALIDOS.includes(curso));
@@ -82,6 +103,11 @@ const crearInvitacionCursoAdmin = async ({ adminUsuario, cursos, expiraEnHoras, 
   const connection = await conexion.getConnection();
 
   try {
+    const ofertas = await obtenerOfertasActivas(connection, ofertaIdsNormalizados);
+    if (ofertas.length !== ofertaIdsNormalizados.length) {
+      return { ok: false, code: 'OFERTAS_INVALIDAS' };
+    }
+
     for (let intento = 0; intento < 5; intento += 1) {
       const codigo = generarCodigoNumerico();
       const codigoHash = hashCodigo(codigo);
@@ -89,12 +115,13 @@ const crearInvitacionCursoAdmin = async ({ adminUsuario, cursos, expiraEnHoras, 
       try {
         const [result] = await connection.query(
           `INSERT INTO InvitacionCurso
-            (codigo_hash, codigo_ultimos4, cursos_json, creado_por, expira_en, cupo_maximo, usos_actuales, activa)
-           VALUES (?, ?, ?, ?, ?, ?, 0, 1)`,
+            (codigo_hash, codigo_ultimos4, cursos_json, oferta_ids_json, creado_por, expira_en, cupo_maximo, usos_actuales, activa)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1)`,
           [
             codigoHash,
             codigo.slice(-4),
             JSON.stringify(cursosNormalizados),
+            JSON.stringify(ofertaIdsNormalizados),
             adminUsuario || null,
             expiraEn,
             cupoSeguro
@@ -107,6 +134,8 @@ const crearInvitacionCursoAdmin = async ({ adminUsuario, cursos, expiraEnHoras, 
           data: {
             invitacionId: result.insertId,
             cursos: cursosNormalizados,
+            ofertaIds: ofertaIdsNormalizados,
+            ofertas: ofertas.map((oferta) => ({ id: oferta.id, curso: oferta.curso, turno: oferta.turno })),
             expiraEn,
             cupoMaximo: cupoSeguro,
             creadoPor: adminUsuario || null
@@ -139,7 +168,7 @@ const canjearInvitacionCursoAlumno = async ({ alumnoUsuario, codigo }) => {
 
     const codigoHash = hashCodigo(codigoPlano);
     const [invRows] = await connection.query(
-      `SELECT id, cursos_json, expira_en, cupo_maximo, usos_actuales, activa
+      `SELECT id, cursos_json, oferta_ids_json, expira_en, cupo_maximo, usos_actuales, activa
        FROM InvitacionCurso
        WHERE codigo_hash = ?
        LIMIT 1
@@ -165,9 +194,10 @@ const canjearInvitacionCursoAlumno = async ({ alumnoUsuario, codigo }) => {
     }
 
     const cursosInvitacion = normalizarCursos(JSON.parse(invitacion.cursos_json || '[]'));
-    if (cursosInvitacion.length === 0) {
+    const ofertaIdsInvitacion = normalizarOfertaIds(JSON.parse(invitacion.oferta_ids_json || '[]'));
+    if (cursosInvitacion.length === 0 && ofertaIdsInvitacion.length === 0) {
       await connection.rollback();
-      return { ok: false, code: 'INVITACION_SIN_CURSOS' };
+      return { ok: false, code: 'INVITACION_SIN_DESTINOS' };
     }
 
     const alumnoInfo = await obtenerCursosAlumno(connection, alumnoUsuario);
@@ -188,13 +218,63 @@ const canjearInvitacionCursoAlumno = async ({ alumnoUsuario, codigo }) => {
 
     const cursosActualesSet = new Set(alumnoInfo.cursos);
     const cursosNuevos = cursosInvitacion.filter((curso) => !cursosActualesSet.has(curso));
+    const ofertasInvitacion = await obtenerOfertasActivas(connection, ofertaIdsInvitacion, true);
+    if (ofertasInvitacion.length !== ofertaIdsInvitacion.length) {
+      await connection.rollback();
+      return { ok: false, code: 'OFERTA_INVALIDA' };
+    }
 
-    if (cursosNuevos.length === 0) {
+    let ofertasYaMatriculadas = [];
+    if (ofertaIdsInvitacion.length > 0) {
+      const placeholders = ofertaIdsInvitacion.map(() => '?').join(', ');
+      const [matriculas] = await connection.query(
+        `SELECT oferta_id FROM MatriculaOferta
+         WHERE usuario_id = ? AND oferta_id IN (${placeholders})`,
+        [alumnoInfo.alumnoId, ...ofertaIdsInvitacion]
+      );
+      ofertasYaMatriculadas = matriculas.map((matricula) => Number(matricula.oferta_id));
+    }
+    const ofertasYaMatriculadasSet = new Set(ofertasYaMatriculadas);
+    const ofertasNuevas = ofertasInvitacion.filter((oferta) => !ofertasYaMatriculadasSet.has(Number(oferta.id)));
+
+    if (cursosNuevos.length === 0 && ofertasNuevas.length === 0) {
       await connection.rollback();
       return { ok: false, code: 'YA_INSCRITO' };
     }
 
-    for (const curso of cursosNuevos) {
+    for (const oferta of ofertasNuevas) {
+      const [[conteo]] = await connection.query(
+        'SELECT COUNT(*) AS total FROM MatriculaOferta WHERE oferta_id = ?',
+        [oferta.id]
+      );
+      if (Number(conteo.total || 0) >= Number(oferta.cupo_maximo)) {
+        await connection.rollback();
+        return { ok: false, code: 'OFERTA_SIN_CUPOS', curso: oferta.curso, turno: oferta.turno };
+      }
+    }
+
+    for (const oferta of ofertasNuevas) {
+      await connection.query(
+        'INSERT INTO MatriculaOferta (usuario_id, oferta_id) VALUES (?, ?)',
+        [alumnoInfo.alumnoId, oferta.id]
+      );
+
+      const cursosLegacyAgregados = new Set(cursosNuevos);
+      const [clasesLegacy] = await connection.query(
+        `SELECT DISTINCT codigo_legacy
+         FROM Clase
+         WHERE oferta_id = ? AND codigo_legacy IS NOT NULL AND TRIM(codigo_legacy) <> ''`,
+        [oferta.id]
+      );
+      for (const clase of clasesLegacy) {
+        if (!cursosActualesSet.has(clase.codigo_legacy) && !cursosLegacyAgregados.has(clase.codigo_legacy)) {
+          cursosNuevos.push(clase.codigo_legacy);
+          cursosLegacyAgregados.add(clase.codigo_legacy);
+        }
+      }
+    }
+
+    for (const curso of new Set(cursosNuevos)) {
       await connection.query(
         'INSERT IGNORE INTO UsuarioCurso (usuario_id, curso) VALUES (?, ?)',
         [alumnoInfo.alumnoId, curso]
@@ -235,7 +315,8 @@ const canjearInvitacionCursoAlumno = async ({ alumnoUsuario, codigo }) => {
         invitacionId: invitacion.id,
         alumnoUsuario,
         cursosAgregados: cursosNuevos,
-        cursosTotales: cursosFinales
+        cursosTotales: cursosFinales,
+        ofertasMatriculadas: ofertasNuevas.map((oferta) => Number(oferta.id))
       }
     };
   } catch (error) {

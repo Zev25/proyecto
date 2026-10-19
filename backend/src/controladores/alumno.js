@@ -130,14 +130,33 @@ const listarIntentosAlumno = async (usuario) => {
     if (!alumnoId) return [];
 
     const [rows] = await connection.query(
-      `SELECT i.id, i.evaluacion_id, i.nota_total, i.created_at, e.titulo, e.curso
+      `SELECT i.id, i.evaluacion_id, i.nota_total, i.created_at, e.titulo, e.curso, e.categoria,
+              (SELECT SUM(p.puntos)
+               FROM IntentoPregunta ip
+               JOIN Pregunta p ON p.id = ip.pregunta_id
+               WHERE ip.intento_id = i.id) AS puntaje_maximo,
+              (SELECT COUNT(*) FROM IntentoPregunta ip WHERE ip.intento_id = i.id) AS total_preguntas,
+              (SELECT COUNT(*) FROM Respuesta r WHERE r.intento_id = i.id) AS respuestas_registradas
        FROM Intento i
        JOIN Evaluacion e ON e.id = i.evaluacion_id
-      WHERE i.alumno_id = ?
+       WHERE i.alumno_id = ?
        ORDER BY i.id DESC`,
-          [alumnoId]
+      [alumnoId]
     );
-    return rows;
+    return rows.map((row) => {
+      const puntajeMaximo = Number(row.puntaje_maximo || 0);
+      const totalPreguntas = Number(row.total_preguntas || 0);
+      const respuestasRegistradas = Number(row.respuestas_registradas || 0);
+      const completado = totalPreguntas > 0 && respuestasRegistradas === totalPreguntas;
+
+      return {
+        ...row,
+        completado,
+        nota_sobre_10: completado && puntajeMaximo > 0
+          ? Math.round((Number(row.nota_total) / puntajeMaximo) * 1000) / 100
+          : null
+      };
+    });
   } finally {
     connection.release();
   }

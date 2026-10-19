@@ -1,99 +1,26 @@
 <script setup>
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 
 const props = defineProps({
   user: { type: Object, required: true }
 });
 
-const emit = defineEmits(['logout']);
+const emit = defineEmits(['logout', 'cursos-actualizados']);
 
 const studentNavItems = [
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'cursos', label: 'Cursos' },
   { key: 'grupos', label: 'Grupos' },
+  { key: 'evaluaciones', label: 'Evaluaciones' },
   { key: 'examenes', label: 'Exámenes finales' },
   { key: 'material', label: 'Material del curso' },
   { key: 'horarios', label: 'Horarios' }
 ];
 
-const studentStats = [
-  { label: 'Promedio', value: '8.7', help: 'Últimas evaluaciones', tone: 'green' },
-  { label: 'Asistencia', value: '92%', help: 'Este bimestre', tone: 'blue' },
-  { label: 'Tareas', value: '04', help: 'Pendientes', tone: 'amber' },
-  { label: 'Grupos', value: '02', help: 'Activos', tone: 'rose' }
-];
-
-const studentCourses = [
-  {
-    id: 'frontend',
-    name: 'Frontend',
-    className: 'redes-software-tarde:1A Frontend',
-    teacher: 'Juan Pérez',
-    room: 'Aula 3 · Campus Norte',
-    schedule: 'Lunes y miércoles · 18:00 a 21:00'
-  },
-  {
-    id: 'bases',
-    name: 'Bases de datos',
-    className: 'datos-practica:2A',
-    teacher: 'María López',
-    room: 'Laboratorio 2 · Campus Norte',
-    schedule: 'Martes y jueves · 18:00 a 21:00'
-  },
-  {
-    id: 'diseno',
-    name: 'Diseño UX',
-    className: 'ux-creative:3A',
-    teacher: 'Ana García',
-    room: 'Sala 5 · Campus Sur',
-    schedule: 'Miércoles y viernes · 16:00 a 18:00'
-  }
-];
-
-const courseActivities = [
-  {
-    courseId: 'frontend',
-    active: [
-      { type: 'Tarea', title: 'Landing page responsive', due: 'Hoy · 18:00', tag: 'UI' },
-      { type: 'Evaluación', title: 'Quiz de HTML semántico', due: 'Mañana · 16:00', tag: 'Quiz' },
-      { type: 'Tarea', title: 'Componente de carrito', due: 'Jue · 20:00', tag: 'JavaScript' }
-    ],
-    upcoming: [
-      { type: 'Evaluación', title: 'Parcial de componentes', due: '22 oct · 19:00', tag: 'Parcial' },
-      { type: 'Tarea', title: 'Entrega final del proyecto', due: '25 oct · 23:59', tag: 'Proyecto' }
-    ]
-  },
-  {
-    courseId: 'bases',
-    active: [
-      { type: 'Evaluación', title: 'Normalización de tablas', due: 'Hoy · 21:00', tag: 'SQL' },
-      { type: 'Tarea', title: 'Modelo relacional', due: 'Mañana · 18:30', tag: 'Modelo' }
-    ],
-    upcoming: [
-      { type: 'Tarea', title: 'Script de consultas', due: '24 oct · 20:00', tag: 'Consultas' },
-      { type: 'Evaluación', title: 'Prueba práctica de joins', due: '29 oct · 18:00', tag: 'Práctica' }
-    ]
-  },
-  {
-    courseId: 'diseno',
-    active: [
-      { type: 'Tarea', title: 'Wireframe del flujo de compra', due: 'Hoy · 17:30', tag: 'UX' },
-      { type: 'Evaluación', title: 'Análisis de accesibilidad', due: 'Mañana · 15:00', tag: 'A11y' }
-    ],
-    upcoming: [
-      { type: 'Tarea', title: 'Prototipo del dashboard', due: '23 oct · 18:30', tag: 'Prototipo' },
-      { type: 'Evaluación', title: 'Diagnóstico de usabilidad', due: '28 oct · 19:00', tag: 'Usabilidad' }
-    ]
-  }
-];
-
-const selectedCourseId = ref(studentCourses[0].id);
-const selectedCourse = computed(() => studentCourses.find((course) => course.id === selectedCourseId.value) || studentCourses[0]);
-const selectedCourseActivities = computed(() => courseActivities.find((course) => course.courseId === selectedCourseId.value) || courseActivities[0]);
+const ofertasAlumno = ref([]);
+const cargandoOfertas = ref(false);
 
 const selectedStudentSection = ref('dashboard');
-const selectedStudentActivity = ref(null);
-const selectedActivityFileName = ref('');
 const evaluacionesReales = ref([]);
 const intentosReales = ref([]);
 const intentoActivo = ref(null);
@@ -106,43 +33,88 @@ const enviandoIntento = ref(false);
 const resultadoIntento = ref(null);
 const error = ref('');
 const okMessage = ref('');
+const codigoInvitacion = ref('');
+const canjeandoInvitacion = ref(false);
+const mensajeInvitacion = ref('');
+const errorInvitacion = ref('');
+const categoriaAlumno = computed(() => selectedStudentSection.value === 'examenes' ? 'examen_final' : 'evaluacion');
+const evaluacionesPorCategoria = computed(() => evaluacionesReales.value.filter((evaluacion) => evaluacion.categoria === categoriaAlumno.value));
+const intentosPorCategoria = computed(() => intentosReales.value.filter((intento) => intento.categoria === categoriaAlumno.value));
+const intentosCompletados = computed(() => intentosReales.value.filter((intento) => intento.completado && intento.nota_sobre_10 !== null));
+const promedioCategoria = computed(() => {
+  const notas = intentosPorCategoria.value
+    .filter((intento) => intento.completado && intento.nota_sobre_10 !== null)
+    .map((intento) => Number(intento.nota_sobre_10));
+  return notas.length ? notas.reduce((total, nota) => total + nota, 0) / notas.length : null;
+});
+const promedioGeneral = computed(() => {
+  const notas = intentosCompletados.value.map((intento) => Number(intento.nota_sobre_10));
+  return notas.length ? notas.reduce((total, nota) => total + nota, 0) / notas.length : null;
+});
+const studentStats = computed(() => [
+  { label: 'Promedio', value: promedioGeneral.value === null ? '—' : promedioGeneral.value.toFixed(1), help: 'Todos los intentos · sobre 10', tone: 'green' },
+  { label: 'Asistencia', value: '—', help: 'Sin datos registrados', tone: 'blue' },
+  { label: 'Tareas', value: '—', help: 'Sin datos registrados', tone: 'amber' },
+  { label: 'Ofertas', value: String(ofertasAlumno.value.length), help: 'Matriculadas', tone: 'rose' }
+]);
 
 const limpiarMensajes = () => {
   error.value = '';
   okMessage.value = '';
 };
 
-const abrirDetalleActividad = (activity, phase) => {
-  selectedStudentActivity.value = {
-    ...activity,
-    phase,
-    courseName: selectedCourse.value.name
-  };
-  selectedActivityFileName.value = '';
-};
+const cargarOfertasAlumno = async () => {
+  cargandoOfertas.value = true;
 
-const volverACursos = () => {
-  selectedStudentActivity.value = null;
-  selectedStudentSection.value = 'cursos';
-};
-
-const seleccionarArchivoActividad = (event) => {
-  selectedActivityFileName.value = event.target.files?.[0]?.name || '';
-};
-
-const detalleActividad = (activity) => {
-  if (activity.type === 'Tarea') {
-    return `Desarrolla y entrega “${activity.title}” aplicando los contenidos de ${activity.tag}. Incluye una explicación breve de las decisiones tomadas y verifica que el trabajo funcione correctamente.`;
+  try {
+    const response = await fetch(`http://localhost:3000/alumno/ofertas?usuario=${encodeURIComponent(props.user.usuario)}`, {
+      headers: { 'x-user-role': 'alumno', 'x-user-name': props.user.usuario }
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'No se pudieron cargar tus cursos');
+    ofertasAlumno.value = data.data || [];
+  } catch (requestError) {
+    error.value = requestError.message;
+  } finally {
+    cargandoOfertas.value = false;
   }
+};
 
-  return `Resuelve la evaluación “${activity.title}”. Lee cada consigna con atención y responde usando los conceptos trabajados en ${activity.tag}.`;
+const canjearInvitacion = async () => {
+  canjeandoInvitacion.value = true;
+  mensajeInvitacion.value = '';
+  errorInvitacion.value = '';
+
+  try {
+    const response = await fetch('http://localhost:3000/alumno/invitaciones/canjear', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-role': 'alumno',
+        'x-user-name': props.user.usuario
+      },
+      body: JSON.stringify({ codigo: codigoInvitacion.value, usuario: props.user.usuario })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'No se pudo canjear la invitación');
+
+    const cursos = result.data.cursosTotales || [];
+    emit('cursos-actualizados', cursos);
+    mensajeInvitacion.value = 'Matrícula actualizada.';
+    codigoInvitacion.value = '';
+    await cargarOfertasAlumno();
+  } catch (requestError) {
+    errorInvitacion.value = requestError.message;
+  } finally {
+    canjeandoInvitacion.value = false;
+  }
 };
 
 const seleccionarSeccionAlumno = async (seccion) => {
-  selectedStudentActivity.value = null;
   selectedStudentSection.value = seccion;
 
-  if (seccion === 'examenes') {
+  if (seccion === 'cursos') await cargarOfertasAlumno();
+  if (seccion === 'evaluaciones' || seccion === 'examenes') {
     await Promise.all([cargarEvaluacionesReales(), cargarIntentosReales()]);
   }
 };
@@ -235,12 +207,12 @@ const enviarIntentoAlumno = async () => {
 
     resultadoIntento.value = {
       evaluacion: evaluacionIntentoActivo.value.titulo,
-      nota: data.notaTotal,
+      nota: data.notaSobreDiez,
       intentoId: data.intentoId
     };
     intentoActivo.value = null;
     evaluacionIntentoActivo.value = null;
-    okMessage.value = `Evaluación enviada. Nota obtenida: ${data.notaTotal}`;
+    okMessage.value = `Evaluación enviada. Nota obtenida: ${Number(data.notaSobreDiez).toFixed(2)} / 10`;
     await cargarIntentosReales();
   } catch (requestError) {
     error.value = requestError.message;
@@ -248,6 +220,10 @@ const enviarIntentoAlumno = async () => {
     enviandoIntento.value = false;
   }
 };
+
+onMounted(() => {
+  Promise.all([cargarOfertasAlumno(), cargarEvaluacionesReales(), cargarIntentosReales()]);
+});
 </script>
 
 <template>
@@ -261,7 +237,7 @@ const enviarIntentoAlumno = async () => {
             aria-label="Abrir perfil"
             title="Perfil"
             :class="{ 'student-topbar__brand--active': selectedStudentSection === 'perfil' }"
-            @click="selectedStudentActivity = null; selectedStudentSection = 'perfil'"
+            @click="selectedStudentSection = 'perfil'"
           >A</button>
           <div>
             <small>Dashboard</small>
@@ -287,58 +263,7 @@ const enviarIntentoAlumno = async () => {
         <section v-if="error" class="alert error" role="alert">{{ error }}</section>
         <section v-if="okMessage" class="alert success" role="status">{{ okMessage }}</section>
 
-        <section v-if="selectedStudentActivity" class="student-panel student-activity-detail">
-          <button type="button" class="student-activity-detail__back" @click="volverACursos">
-            ← Volver a cursos
-          </button>
-
-          <header class="student-activity-detail__header card">
-            <div>
-              <p class="student-card__kicker">{{ selectedStudentActivity.type }} · {{ selectedStudentActivity.courseName }}</p>
-              <h2>{{ selectedStudentActivity.title }}</h2>
-              <p>{{ selectedStudentActivity.due }}</p>
-            </div>
-            <span class="student-activity-detail__status" :class="{ 'student-activity-detail__status--upcoming': selectedStudentActivity.phase === 'upcoming' }">
-              {{ selectedStudentActivity.phase === 'upcoming' ? 'Próximamente' : 'Activa' }}
-            </span>
-          </header>
-
-          <article class="card student-activity-detail__statement">
-            <p class="student-card__kicker">Enunciado</p>
-            <p>{{ detalleActividad(selectedStudentActivity) }}</p>
-            <p class="student-activity-detail__instruction">
-              {{ selectedStudentActivity.type === 'Tarea' ? 'Revisa los requisitos y adjunta tu archivo en la sección de entrega.' : 'Completa tu respuesta en el espacio indicado.' }}
-            </p>
-          </article>
-
-          <article v-if="selectedStudentActivity.phase === 'upcoming'" class="card student-activity-detail__submission">
-            <p class="student-card__kicker">Disponible próximamente</p>
-            <p>Esta actividad todavía no está habilitada. Podrás ver las opciones de respuesta cuando se active.</p>
-          </article>
-
-          <article v-else-if="selectedStudentActivity.type === 'Tarea'" class="card student-activity-detail__submission">
-            <p class="student-card__kicker">Entrega</p>
-            <h3>Adjuntar archivo</h3>
-            <label class="student-activity-detail__file-picker">
-              <span>{{ selectedActivityFileName || 'Seleccionar archivo' }}</span>
-              <input type="file" @change="seleccionarArchivoActividad" />
-            </label>
-            <label class="student-activity-detail__response-label" for="submission-comment">Comentario para el docente</label>
-            <textarea id="submission-comment" rows="4" placeholder="Escribe un comentario sobre tu entrega..."></textarea>
-            <button type="button" class="student-profile__action" disabled>Enviar entrega</button>
-            <small class="student-profile__note">El archivo se puede seleccionar, pero el envío todavía no está conectado al servidor.</small>
-          </article>
-
-          <article v-else class="card student-activity-detail__submission">
-            <p class="student-card__kicker">Respuesta</p>
-            <h3>Tu respuesta</h3>
-            <textarea rows="7" placeholder="Escribe aquí tu respuesta..."></textarea>
-            <button type="button" class="student-profile__action" disabled>Enviar evaluación</button>
-            <small class="student-profile__note">El envío de esta evaluación todavía no está conectado a esta actividad.</small>
-          </article>
-        </section>
-
-        <section v-else-if="selectedStudentSection === 'perfil'" class="student-panel student-profile">
+        <section v-if="selectedStudentSection === 'perfil'" class="student-panel student-profile">
           <header class="student-profile__heading">
             <p class="eyebrow">Cuenta</p>
             <h2>Perfil y configuración</h2>
@@ -415,73 +340,70 @@ const enviarIntentoAlumno = async () => {
               <ul class="student-list">
                 <li><strong>Nombre:</strong> {{ props.user.nombre }} {{ props.user.apellido }}</li>
                 <li><strong>Usuario:</strong> {{ props.user.usuario }}</li>
-                <li><strong>Curso:</strong> {{ props.user.curso || 'Sin curso asignado' }}</li>
+                <li><strong>Ofertas:</strong> {{ ofertasAlumno.length }}</li>
                 <li><strong>Rol:</strong> {{ props.user.tipo }}</li>
               </ul>
             </article>
 
             <article class="card student-card">
               <p class="student-card__kicker">Curso</p>
-              <h3>Materias y clase</h3>
-              <ul class="student-list">
-                <li><strong>Materia:</strong> {{ props.user.curso || 'Sin curso asignado' }}</li>
-                <li><strong>Horario:</strong> Lunes y miércoles · 18:00 a 21:00</li>
-                <li><strong>Sala:</strong> Aula 3 · Campus Norte</li>
-                <li><strong>Profesor:</strong> Juan Pérez</li>
+              <h3>Ofertas matriculadas</h3>
+              <ul v-if="ofertasAlumno.length" class="student-list">
+                <li v-for="oferta in ofertasAlumno" :key="oferta.id">
+                  <strong>{{ oferta.course }} · {{ oferta.turno }}</strong>
+                  <span>{{ oferta.classes.map((clase) => `${clase.subject} (${clase.name})`).join(', ') }}</span>
+                  <small>{{ oferta.start }}–{{ oferta.end }}</small>
+                </li>
               </ul>
+              <p v-else class="student-empty-state">No tienes ofertas matriculadas.</p>
             </article>
           </section>
         </section>
 
         <section v-else-if="selectedStudentSection === 'cursos'" class="student-panel">
-          <div class="student-course-layout">
-            <aside class="card student-course-sidebar">
-              <div class="student-course-activity-group">
-                <h4>Activas</h4>
-                <ul class="student-course-list">
-                  <li v-for="item in selectedCourseActivities.active" :key="`${item.type}-${item.title}`">
-                    <button type="button" class="student-course-list__activity" @click="abrirDetalleActividad(item, 'active')">
-                      <span class="student-course-list__type">{{ item.type }}</span>
-                      <strong>{{ item.title }}</strong>
-                      <small>{{ item.due }}</small>
-                    </button>
+          <header class="student-offers-heading">
+            <div><p class="eyebrow">Matrícula</p><h2>Cursos y clases</h2></div>
+            <button type="button" class="student-profile__action" :disabled="cargandoOfertas" @click="cargarOfertasAlumno">{{ cargandoOfertas ? 'Actualizando...' : 'Actualizar' }}</button>
+          </header>
+
+          <section class="student-offer-grid" aria-label="Ofertas matriculadas">
+            <div v-if="cargandoOfertas" class="card student-empty-state">Cargando tus ofertas...</div>
+            <div v-else-if="ofertasAlumno.length" class="student-offer-grid__items">
+              <article v-for="oferta in ofertasAlumno" :key="oferta.id" class="card student-offer-card">
+                <header>
+                  <div><p class="student-card__kicker">{{ oferta.course }}</p><h3>{{ oferta.turno }}</h3></div>
+                  <span>{{ oferta.enrolled }}/{{ oferta.capacity }} alumnos</span>
+                </header>
+                <p class="student-offer-card__schedule">{{ oferta.start }}–{{ oferta.end }}</p>
+                <ul class="student-list">
+                  <li v-for="clase in oferta.classes" :key="clase.id || clase.name">
+                    <strong>{{ clase.subject }} · {{ clase.name }}</strong>
+                    <small>{{ clase.mode === 'semanal' ? clase.schedule : 'Modalidad por entregas' }}</small>
                   </li>
                 </ul>
-              </div>
-
-              <div class="student-course-divider" aria-hidden="true"></div>
-
-              <div class="student-course-activity-group">
-                <h4>Próximas</h4>
-                <ul class="student-course-list student-course-list--muted">
-                  <li v-for="item in selectedCourseActivities.upcoming" :key="`${item.type}-${item.title}`">
-                    <button type="button" class="student-course-list__activity" @click="abrirDetalleActividad(item, 'upcoming')">
-                      <span class="student-course-list__type">{{ item.type }}</span>
-                      <strong>{{ item.title }}</strong>
-                      <small>{{ item.due }}</small>
-                    </button>
-                  </li>
-                </ul>
-              </div>
-            </aside>
-
-            <div class="student-course-main">
-              <div v-if="studentCourses.length > 1" class="student-course-selector card">
-                <p class="student-card__kicker">Materias</p>
-                <div class="student-course-selector__options">
-                  <button
-                    v-for="course in studentCourses"
-                    :key="course.id"
-                    type="button"
-                    class="student-course-selector__item"
-                    :class="{ 'student-course-selector__item--active': selectedCourseId === course.id }"
-                    @click="selectedCourseId = course.id"
-                  >
-                    {{ course.name }}
-                  </button>
-                </div>
-              </div>
+              </article>
             </div>
+            <div v-else class="card student-empty-state">No tienes ofertas matriculadas. Puedes canjear una invitación para inscribirte.</div>
+          </section>
+
+          <div class="student-course-main">
+              <article class="card student-enrollment">
+                <div>
+                  <p class="student-card__kicker">Matrícula</p>
+                  <h3>Agregar curso con invitación</h3>
+                  <small>Matrícula actual: {{ props.user.cursos?.join(', ') || props.user.curso || 'Sin cursos' }}</small>
+                </div>
+                <form class="student-enrollment__form" @submit.prevent="canjearInvitacion">
+                  <label for="course-invitation-code">Código de invitación
+                    <input id="course-invitation-code" v-model="codigoInvitacion" type="text" inputmode="numeric" autocomplete="off" maxlength="8" pattern="[0-9]{8}" placeholder="8 dígitos" required />
+                  </label>
+                  <button type="submit" class="student-profile__action" :disabled="canjeandoInvitacion || codigoInvitacion.trim().length !== 8">
+                    {{ canjeandoInvitacion ? 'Validando...' : 'Canjear código' }}
+                  </button>
+                </form>
+                <p v-if="mensajeInvitacion" class="student-enrollment__message" role="status">{{ mensajeInvitacion }}</p>
+                <p v-if="errorInvitacion" class="student-enrollment__message student-enrollment__message--error" role="alert">{{ errorInvitacion }}</p>
+              </article>
           </div>
         </section>
 
@@ -493,11 +415,16 @@ const enviarIntentoAlumno = async () => {
           </article>
         </section>
 
-        <section v-else-if="selectedStudentSection === 'examenes'" class="student-panel student-exams">
+        <section v-else-if="['evaluaciones', 'examenes'].includes(selectedStudentSection)" class="student-panel student-exams">
           <header class="student-exams__heading">
-            <div><p class="eyebrow">Evaluaciones de tus cursos</p><h2>Exámenes</h2></div>
+            <div><p class="eyebrow">{{ selectedStudentSection === 'examenes' ? 'Exámenes finales de tus cursos' : 'Evaluaciones de tus cursos' }}</p><h2>{{ selectedStudentSection === 'examenes' ? 'Exámenes finales' : 'Evaluaciones' }}</h2></div>
             <button type="button" class="student-profile__action" :disabled="cargandoEvaluaciones || cargandoIntentos" @click="actualizarDatosExamenesAlumno">Actualizar</button>
           </header>
+
+          <article class="card student-exam-result student-exam-average">
+            <div><p class="student-card__kicker">Promedio · {{ selectedStudentSection === 'examenes' ? 'Exámenes finales' : 'Evaluaciones' }}</p><small>Se consideran todos los intentos enviados</small></div>
+            <strong>{{ promedioCategoria === null ? 'Sin calificaciones' : `${promedioCategoria.toFixed(2)} / 10` }}</strong>
+          </article>
 
           <article v-if="resultadoIntento" class="card student-exam-result" role="status">
             <div><p class="student-card__kicker">Intento registrado</p><h3>{{ resultadoIntento.evaluacion }}</h3><small>Intento #{{ resultadoIntento.intentoId }}</small></div>
@@ -525,19 +452,19 @@ const enviarIntentoAlumno = async () => {
 
           <section v-else class="student-exam-list">
             <div v-if="cargandoEvaluaciones" class="card student-empty-state">Cargando evaluaciones…</div>
-            <div v-else-if="evaluacionesReales.length" class="student-exam-list__grid">
-              <article v-for="evaluacion in evaluacionesReales" :key="evaluacion.id" class="card student-exam-card">
+            <div v-else-if="evaluacionesPorCategoria.length" class="student-exam-list__grid">
+              <article v-for="evaluacion in evaluacionesPorCategoria" :key="evaluacion.id" class="card student-exam-card">
                 <div><p class="student-card__kicker">{{ evaluacion.curso || 'Evaluación general' }}</p><h3>{{ evaluacion.titulo }}</h3><small>Creada por {{ evaluacion.creado_por }}</small></div>
                 <footer><span>Banco: {{ evaluacion.max_preguntas }} · se sortearán {{ evaluacion.preguntas_por_intento }} preguntas</span><button type="button" class="student-profile__action" :disabled="evaluacionIniciandoId !== null" @click="iniciarIntentoAlumno(evaluacion)">{{ evaluacionIniciandoId === evaluacion.id ? 'Preparando…' : 'Iniciar intento' }}</button></footer>
               </article>
             </div>
-            <div v-else class="card student-empty-state">No hay evaluaciones disponibles para tus cursos.</div>
+            <div v-else class="card student-empty-state">No hay {{ selectedStudentSection === 'examenes' ? 'exámenes finales' : 'evaluaciones' }} disponibles para tus cursos.</div>
           </section>
 
           <section class="card student-exam-history">
             <header><div><p class="student-card__kicker">Resultados</p><h3>Mis intentos</h3></div><span v-if="cargandoIntentos">Actualizando…</span></header>
-            <div v-if="intentosReales.length" class="student-exam-history__list">
-              <article v-for="intento in intentosReales" :key="intento.id"><div><strong>{{ intento.titulo }}</strong><small>{{ intento.curso || 'Evaluación general' }} · {{ new Date(intento.created_at).toLocaleString() }}</small></div><span>{{ intento.nota_total }} puntos</span></article>
+            <div v-if="intentosPorCategoria.length" class="student-exam-history__list">
+              <article v-for="intento in intentosPorCategoria" :key="intento.id"><div><strong>{{ intento.titulo }}</strong><small>{{ intento.curso || 'Evaluación general' }} · {{ new Date(intento.created_at).toLocaleString() }}</small></div><span>{{ intento.completado ? `${Number(intento.nota_sobre_10).toFixed(2)} / 10` : 'Sin enviar' }}</span></article>
             </div>
             <p v-else class="student-empty-state">Aún no tienes intentos registrados.</p>
           </section>
@@ -808,72 +735,6 @@ const enviarIntentoAlumno = async () => {
   background: #a44f47;
 }
 
-.student-sidebar {
-  position: sticky;
-  top: 1rem;
-  min-height: 760px;
-  padding: 1.4rem 0.9rem 1rem;
-  background: #223a33;
-  color: #eef3ef;
-}
-
-.student-sidebar__brand {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  padding: 0.5rem 0.25rem 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-}
-
-.student-sidebar__mark {
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  background: rgba(99, 102, 241, 0.22);
-  color: #e0e7ff;
-  font-weight: 700;
-}
-
-.student-sidebar__eyebrow {
-  margin: 0;
-  color: #cbd5e1;
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.student-sidebar__brand strong {
-  display: block;
-  margin-top: 0.15rem;
-  font-size: 1rem;
-}
-
-.student-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-top: 1.25rem;
-}
-
-.student-nav__item {
-  width: 100%;
-  border: 1px solid transparent;
-  border-radius: 3px;
-  background: transparent;
-  color: #d1ddd7;
-  text-align: left;
-  padding: 0.9rem 1rem;
-  font-weight: 600;
-}
-
-.student-nav__item--active {
-  border-color: rgba(197, 217, 208, 0.13);
-  background: #315348;
-  color: #fff;
-}
-
 .student-main {
   display: grid;
   gap: 1.25rem;
@@ -911,233 +772,10 @@ const enviarIntentoAlumno = async () => {
   color: var(--teacher-muted);
 }
 
-.student-course-layout {
-  display: grid;
-  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
-  gap: 1.25rem;
-  align-items: start;
-}
-
-.student-course-sidebar {
-  display: grid;
-  gap: 1rem;
-  align-self: stretch;
-  min-height: 100%;
-}
-
-.student-course-sidebar__header h3 {
-  margin: 0;
-  color: #263630;
-}
-
-.student-course-activity-group h4 {
-  margin: 0 0 0.7rem;
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #607d70;
-}
-
-.student-course-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.7rem;
-}
-
-.student-course-list li {
-  padding: 0;
-  border: 1px solid #e7ece8;
-  background: #f8faf9;
-  border-radius: 8px;
-}
-
-.student-course-list__activity {
-  width: 100%;
-  display: grid;
-  gap: 0.25rem;
-  padding: 0.75rem 0.7rem;
-  border: 0;
-  border-radius: inherit;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-
-.student-course-list__activity:hover,
-.student-course-list__activity:focus-visible {
-  background: #edf4ef;
-  outline: none;
-}
-
-.student-course-list__type {
-  font-size: 0.62rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-weight: 700;
-  color: #607d70;
-}
-
-.student-course-list strong {
-  color: #1f2f2a;
-  font-size: 0.96rem;
-}
-
-.student-course-list small {
-  color: #66756f;
-}
-
-.student-activity-detail {
-  max-width: 980px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.student-activity-detail__back {
-  width: fit-content;
-  border: 0;
-  background: transparent;
-  color: #315d50;
-  padding: 0.35rem 0;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.student-activity-detail__header,
-.student-activity-detail__statement,
-.student-activity-detail__submission {
-  border: 1px solid var(--teacher-line) !important;
-  border-radius: 3px;
-  background: var(--teacher-paper);
-  padding: 1.4rem;
-}
-
-.student-activity-detail__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 1rem;
-}
-
-.student-activity-detail__header h2 {
-  margin: 0 0 0.5rem;
-  color: #263630;
-  font: 500 1.85rem/1.2 Georgia, 'Times New Roman', serif;
-}
-
-.student-activity-detail__header p:last-child,
-.student-activity-detail__statement > p:not(.student-card__kicker) {
-  margin: 0;
-  color: #596760;
-}
-
-.student-activity-detail__status {
-  flex: 0 0 auto;
-  border-radius: 999px;
-  background: #e5f1e9;
-  color: #315d50;
-  padding: 0.4rem 0.7rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-
-.student-activity-detail__status--upcoming {
-  background: #f4eee1;
-  color: #806b3d;
-}
-
-.student-activity-detail__statement > p:not(.student-card__kicker) {
-  line-height: 1.65;
-}
-
-.student-activity-detail__instruction {
-  margin-top: 1rem !important;
-}
-
-.student-activity-detail__submission {
-  display: grid;
-  gap: 0.85rem;
-}
-
-.student-activity-detail__submission h3 {
-  margin: -0.5rem 0 0;
-  color: #263630;
-}
-
-.student-activity-detail__file-picker {
-  min-height: 54px;
-  display: flex;
-  align-items: center;
-  border: 1px dashed #aebdb3;
-  border-radius: 3px;
-  background: #f8faf9;
-  color: #315d50;
-  padding: 0.8rem 1rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.student-activity-detail__file-picker input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-}
-
-.student-activity-detail__response-label {
-  color: #53615a;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.student-activity-detail__submission textarea {
-  width: 100%;
-  resize: vertical;
-  border: 1px solid #dfe7e1;
-  border-radius: 3px;
-  background: #fff;
-  padding: 0.75rem;
-  color: #263630;
-  font: inherit;
-}
-
-.student-course-divider {
-  height: 1px;
-  background: linear-gradient(90deg, rgba(82, 110, 99, 0.25), rgba(82, 110, 99, 0.8), rgba(82, 110, 99, 0.25));
-}
-
 .student-course-main {
   display: grid;
   gap: 1.25rem;
   min-width: 0;
-}
-
-.student-course-selector {
-  min-height: 0;
-}
-
-.student-course-selector__options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.student-course-selector__item {
-  border: 1px solid #dfe7e1;
-  border-radius: 999px;
-  background: #f7faf8;
-  color: #263630;
-  padding: 0.55rem 0.9rem;
-  font-weight: 600;
-}
-
-.student-course-selector__item--active {
-  background: #315d50;
-  border-color: #315d50;
-  color: #fff;
 }
 
 .student-exams {
@@ -1332,12 +970,6 @@ const enviarIntentoAlumno = async () => {
   }
 }
 
-.student-hero__actions {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
 .student-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1422,47 +1054,22 @@ const enviarIntentoAlumno = async () => {
   gap: 0.55rem;
 }
 
-.student-list--compact {
-  gap: 0.35rem;
-}
-
-.student-group {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  padding: 1rem;
-  margin-top: 1rem;
-}
-
-.student-group__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.7rem;
-}
-
-.student-badge {
-  background: #e0e7ff;
-  color: #3730a3;
-  border-radius: 999px;
-  padding: 0.3rem 0.6rem;
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-
-.student-highlight {
-  background: linear-gradient(90deg, #eef2ff, #f8fafc);
-  border: 1px solid #dfe3f9;
-  border-radius: 12px;
-  padding: 0.9rem 1rem;
-  margin-bottom: 1rem;
-  color: #1f2937;
-}
-
 .student-hero h2,
 .student-card h3,
 .student-card h4 {
   color: #263630;
+}
+.student-enrollment { display: grid; gap: 0.85rem; margin-bottom: 1rem; padding: 1rem; }
+.student-enrollment h3 { margin: 0 0 0.25rem; font-size: 1rem; }
+.student-enrollment small { color: #748078; }
+.student-enrollment__form { display: flex; align-items: end; gap: 0.75rem; }
+.student-enrollment__form label { display: grid; width: min(100%, 260px); gap: 0.35rem; color: #617068; font-size: 0.78rem; }
+.student-enrollment__form input { width: 100%; min-height: 40px; padding: 0.55rem 0.65rem; border: 1px solid #d8dfda; border-radius: 6px; background: #fff; color: #23332e; }
+.student-enrollment__message { margin: 0; color: #326a4c; font-size: 0.82rem; }
+.student-enrollment__message--error { color: #a23c35; }
+@media (max-width: 600px) {
+  .student-enrollment__form { align-items: stretch; flex-direction: column; }
+  .student-enrollment__form label { width: 100%; }
+  .student-enrollment__form .student-profile__action { align-self: flex-start; }
 }
 </style>

@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
-import { courseOfferings } from '../../data/courseOfferings.js';
 
 const props = defineProps({
   user: { type: Object, required: true }
@@ -11,21 +10,31 @@ const emit = defineEmits(['logout']);
 const activeSection = ref('overview');
 const summary = ref(null);
 const users = ref([]);
+const ofertas = ref([]);
+const cargandoOfertas = ref(false);
 const searchText = ref('');
 const roleFilter = ref('alumno');
 const loading = ref(false);
 const loadError = ref('');
+const creandoInvitacion = ref(false);
+const invitacionCreada = ref(null);
+const codigoCopiado = ref(false);
 const offeringDialogOpen = ref(false);
-const materiasDisponibles = ['Redes', 'Frontend', 'Programación', 'Software', 'Matemática', 'Ciencia'];
+const guardandoOferta = ref(false);
+const invitationForm = reactive({
+  ofertaIds: [],
+  expiraEnHoras: 24,
+  cupoMaximo: 1
+});
 const nuevaOferta = reactive({
   curso: '',
   turno: '',
   horaInicio: '',
   horaFin: '',
-  cupoMaximo: 25
+  cupoMaximo: ''
 });
 const nuevasClases = ref([
-  { materia: '', nombre: '', modalidad: 'semanal', horario: '' }
+  { materia: '', nombre: '', modalidad: 'semanal', horario: '', codigoLegacy: '' }
 ]);
 const navItems = [
   { key: 'overview', label: 'Resumen', icon: 'dashboard' },
@@ -42,7 +51,7 @@ const abrirFormularioOferta = () => {
 };
 
 const agregarClaseOferta = () => {
-  nuevasClases.value.push({ materia: '', nombre: '', modalidad: 'semanal', horario: '' });
+  nuevasClases.value.push({ materia: '', nombre: '', modalidad: 'semanal', horario: '', codigoLegacy: '' });
 };
 
 const quitarClaseOferta = (index) => {
@@ -68,17 +77,53 @@ const cargarDatos = async () => {
   loadError.value = '';
 
   try {
-    const [resumenResult, usuariosResult] = await Promise.all([
+    const [resumenResult, usuariosResult, ofertasResult] = await Promise.all([
       requestJson('http://localhost:3000/admin/resumen'),
-      requestJson('http://localhost:3000/admin/usuarios?tipo=alumno')
+      requestJson('http://localhost:3000/admin/usuarios?tipo=alumno'),
+      requestJson('http://localhost:3000/admin/ofertas')
     ]);
 
     summary.value = resumenResult.data;
     users.value = usuariosResult.data || [];
+    ofertas.value = ofertasResult.data || [];
   } catch (error) {
     loadError.value = error.message;
   } finally {
     loading.value = false;
+  }
+};
+
+const crearOferta = async () => {
+  guardandoOferta.value = true;
+  loadError.value = '';
+
+  try {
+    const response = await fetch('http://localhost:3000/admin/ofertas', {
+      method: 'POST',
+      headers: {
+        ...adminHeaders.value,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        ...nuevaOferta,
+        clases: nuevasClases.value
+      })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'No se pudo crear la oferta');
+
+    nuevaOferta.curso = '';
+    nuevaOferta.turno = '';
+    nuevaOferta.horaInicio = '';
+    nuevaOferta.horaFin = '';
+    nuevaOferta.cupoMaximo = '';
+    nuevasClases.value = [{ materia: '', nombre: '', modalidad: 'semanal', horario: '', codigoLegacy: '' }];
+    offeringDialogOpen.value = false;
+    await cargarDatos();
+  } catch (error) {
+    loadError.value = error.message;
+  } finally {
+    guardandoOferta.value = false;
   }
 };
 
@@ -100,11 +145,57 @@ const buscarUsuarios = async () => {
   }
 };
 
+const crearInvitacion = async () => {
+  creandoInvitacion.value = true;
+  loadError.value = '';
+  invitacionCreada.value = null;
+
+  try {
+    const response = await fetch('http://localhost:3000/admin/invitaciones/cursos', {
+      method: 'POST',
+      headers: {
+        ...adminHeaders.value,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        ofertaIds: invitationForm.ofertaIds,
+        expiraEnHoras: invitationForm.expiraEnHoras,
+        cupoMaximo: invitationForm.cupoMaximo,
+        adminUsuario: props.user.usuario
+      })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'No se pudo crear la invitación');
+
+    invitacionCreada.value = {
+      codigo: result.codigo,
+      ...result.data
+    };
+    codigoCopiado.value = false;
+    await cargarDatos();
+  } catch (error) {
+    loadError.value = error.message;
+  } finally {
+    creandoInvitacion.value = false;
+  }
+};
+
+const copiarCodigoInvitacion = async () => {
+  if (!invitacionCreada.value?.codigo) return;
+
+  try {
+    await navigator.clipboard.writeText(invitacionCreada.value.codigo);
+    codigoCopiado.value = true;
+  } catch (error) {
+    loadError.value = `No se pudo copiar el código: ${error.message}`;
+  }
+};
+
 const metricItems = computed(() => [
   { label: 'Alumnos registrados', value: summary.value?.alumnos ?? '—', icon: 'school', tone: 'blue', current: true },
-  { label: 'Ofertas de curso', value: courseOfferings.length, icon: 'library_books', tone: 'green' },
-  { label: 'Cupos disponibles', value: courseOfferings.reduce((total, item) => total + item.capacity - item.enrolled, 0), icon: 'event_seat', tone: 'amber' },
-  { label: 'Turnos completos', value: courseOfferings.filter((item) => item.enrolled >= item.capacity).length, icon: 'block', tone: 'coral' }
+  { label: 'Ofertas de curso', value: ofertas.value.length, icon: 'library_books', tone: 'green', current: true },
+  { label: 'Cupos disponibles', value: ofertas.value.reduce((total, item) => total + Math.max(item.capacity - item.enrolled, 0), 0), icon: 'event_seat', tone: 'amber', current: true },
+  { label: 'Turnos completos', value: ofertas.value.filter((item) => item.enrolled >= item.capacity).length, icon: 'block', tone: 'coral', current: true }
 ]);
 
 const fechaActual = new Intl.DateTimeFormat('es', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date());
@@ -134,7 +225,7 @@ onMounted(cargarDatos);
         >
           <span class="material-icons" aria-hidden="true">{{ item.icon }}</span>
           <span>{{ item.label }}</span>
-          <span v-if="item.key === 'groups' || item.key === 'teachers' || item.key === 'invitations'" class="admin-nav__soon">Diseño</span>
+          <span v-if="item.key === 'groups' || item.key === 'teachers'" class="admin-nav__soon">Diseño</span>
         </button>
       </nav>
 
@@ -184,11 +275,9 @@ onMounted(cargarDatos);
                 <span class="material-icons" aria-hidden="true">{{ metric.icon }}</span>
               </div>
               <strong>{{ metric.value }}</strong>
-              <small>{{ metric.current ? 'Dato actual' : 'Ejemplo de diseño' }}</small>
+              <small>Dato actual</small>
             </article>
           </div>
-
-          <div class="admin-prototype-banner"><span class="material-icons" aria-hidden="true">info</span>Los turnos y cupos son datos de ejemplo para validar la estructura; todavía no se guardan.</div>
 
           <div class="admin-overview-grid">
             <section class="admin-section admin-courses-section">
@@ -206,13 +295,14 @@ onMounted(cargarDatos);
                     <tr><th>Curso / turno</th><th>Materias y clases</th><th>Horario</th><th>Alumnos</th><th>Estado</th></tr>
                   </thead>
                   <tbody>
-                    <tr v-for="offering in courseOfferings" :key="offering.id">
+                    <tr v-for="offering in ofertas" :key="offering.id">
                       <td><strong>{{ offering.course }}</strong><small class="table-subtext">{{ offering.shift }}</small></td>
                       <td class="subjects-cell">{{ offering.classes.map((item) => `${item.subject} (${item.name})`).join(', ') }}</td>
                       <td>{{ offering.start }}-{{ offering.end }}</td>
                       <td>{{ offering.enrolled }}/{{ offering.capacity }}</td>
                       <td><span :class="['offering-status', { 'is-full': offering.enrolled >= offering.capacity }]">{{ offering.enrolled >= offering.capacity ? 'Completo' : 'Disponible' }}</span></td>
                     </tr>
+                    <tr v-if="!ofertas.length"><td colspan="5" class="admin-empty">{{ loading ? 'Cargando ofertas...' : 'Todavía no hay cursos u ofertas creadas.' }}</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -226,7 +316,7 @@ onMounted(cargarDatos);
                 </div>
                 <span class="material-icons admin-section__icon" aria-hidden="true">event_available</span>
               </div>
-              <div class="enrollment-rule__capacity"><strong>25</strong><span>alumnos máximo<br />por turno</span></div>
+              <div class="enrollment-rule__capacity"><strong>Por oferta</strong><span>cupo configurado<br />por administración</span></div>
               <p class="enrollment-rule__copy">Al inscribir a un alumno en un turno, queda asignado automáticamente a todas las materias de ese curso.</p>
               <div class="admin-section__footnote">Si el turno no tiene cupos, se informa que está completo y no se crea una inscripción parcial.</div>
             </section>
@@ -312,7 +402,7 @@ onMounted(cargarDatos);
               <table class="admin-table">
                 <thead><tr><th>Curso</th><th>Turno y horario</th><th>Materias / clases incluidas</th><th>Cupos</th><th>Estado</th><th>Acciones</th></tr></thead>
                 <tbody>
-                  <tr v-for="offering in courseOfferings" :key="offering.id">
+                  <tr v-for="offering in ofertas" :key="offering.id">
                     <td><strong>{{ offering.course }}</strong></td>
                     <td>{{ offering.shift }}<small class="table-subtext">{{ offering.start }}-{{ offering.end }}</small></td>
                     <td class="subjects-cell">{{ offering.classes.map((item) => `${item.subject} (${item.name})`).join(', ') }}</td>
@@ -320,6 +410,7 @@ onMounted(cargarDatos);
                     <td><span :class="['offering-status', { 'is-full': offering.enrolled >= offering.capacity }]">{{ offering.enrolled >= offering.capacity ? 'Completo' : 'Disponible' }}</span></td>
                     <td><button class="admin-row-action" type="button" disabled>Editar</button><button class="admin-row-action is-danger" type="button" disabled>Eliminar</button></td>
                   </tr>
+                  <tr v-if="!ofertas.length"><td colspan="6" class="admin-empty">{{ cargandoOfertas ? 'Cargando ofertas...' : 'No hay ofertas. Crea la primera para habilitar inscripciones.' }}</td></tr>
                 </tbody>
               </table>
             </div>
@@ -328,7 +419,7 @@ onMounted(cargarDatos);
           <div class="admin-design-note"><span class="material-icons" aria-hidden="true">event_seat</span><p>La inscripción será atómica: se valida el cupo del turno y se agregan todas sus materias/clases. Si está completo, no se asigna ninguna y se informa que ese turno está lleno. Cada clase podrá manejar horario semanal o modalidad por entregas.</p></div>
 
           <div v-if="offeringDialogOpen" class="admin-dialog-backdrop" @click.self="offeringDialogOpen = false">
-            <form class="admin-dialog" @submit.prevent>
+            <form class="admin-dialog" @submit.prevent="crearOferta">
               <header class="admin-dialog__header">
                 <div><p class="admin-eyebrow">Nueva oferta académica</p><h2>Crear curso y turno</h2></div>
                 <button class="admin-icon-button" type="button" aria-label="Cerrar formulario" @click="offeringDialogOpen = false"><span class="material-icons" aria-hidden="true">close</span></button>
@@ -353,18 +444,19 @@ onMounted(cargarDatos);
                 <div class="admin-dialog__section-heading"><div><h3>Materias y clases</h3><p>Cada materia debe tener horario semanal o modalidad por entregas.</p></div><button class="admin-text-button" type="button" @click="agregarClaseOferta">+ Añadir materia</button></div>
                 <div v-for="(clase, index) in nuevasClases" :key="index" class="admin-class-row">
                   <label class="admin-dialog__field">Materia
-                    <select v-model="clase.materia" required><option disabled value="">Seleccionar</option><option v-for="materia in materiasDisponibles" :key="materia" :value="materia">{{ materia }}</option></select>
+                    <input v-model="clase.materia" type="text" placeholder="Ej. Frontend" required />
                   </label>
                   <label class="admin-dialog__field">Nombre de clase<input v-model="clase.nombre" type="text" placeholder="Ej. 1A Frontend" required /></label>
                   <label class="admin-dialog__field">Modalidad<select v-model="clase.modalidad"><option value="semanal">Horario semanal</option><option value="entregas">Por entregas</option></select></label>
                   <label v-if="clase.modalidad === 'semanal'" class="admin-dialog__field admin-class-row__schedule">Horario de clase<input v-model="clase.horario" type="text" placeholder="Ej. Martes 15:00–17:00" required /></label>
                   <div v-else class="admin-class-row__async">Sin horario fijo · organizado por entregas</div>
+                  <label class="admin-dialog__field">Código legacy (opcional)<input v-model="clase.codigoLegacy" type="text" maxlength="100" placeholder="Ej. frontend" /></label>
                   <button class="admin-row-action is-danger" type="button" :disabled="nuevasClases.length === 1" aria-label="Quitar materia" @click="quitarClaseOferta(index)">Quitar</button>
                 </div>
               </section>
 
               <div class="admin-dialog__notice"><span class="material-icons" aria-hidden="true">school</span>Los docentes se asignan por separado desde la sección Docentes.</div>
-              <footer class="admin-dialog__actions"><button class="admin-secondary-button" type="button" @click="offeringDialogOpen = false">Cancelar</button><button class="admin-primary-button" type="submit" disabled title="La persistencia se conectará después de validar este diseño">Guardar oferta</button></footer>
+              <footer class="admin-dialog__actions"><button class="admin-secondary-button" type="button" :disabled="guardandoOferta" @click="offeringDialogOpen = false">Cancelar</button><button class="admin-primary-button" type="submit" :disabled="guardandoOferta">{{ guardandoOferta ? 'Guardando...' : 'Guardar oferta' }}</button></footer>
             </form>
           </div>
         </div>
@@ -380,7 +472,7 @@ onMounted(cargarDatos);
               <table class="admin-table">
                 <thead><tr><th>Curso / turno</th><th>Materia / clase</th><th>Horario</th><th>Docente</th><th>Acción</th></tr></thead>
                 <tbody>
-                  <template v-for="offering in courseOfferings" :key="offering.id">
+                  <template v-for="offering in ofertas" :key="offering.id">
                     <tr v-for="item in offering.classes" :key="item.name">
                       <td>{{ offering.course }}<small class="table-subtext">{{ offering.shift }}</small></td>
                       <td><strong>{{ item.subject }}</strong><small class="table-subtext">{{ item.name }}</small></td>
@@ -389,6 +481,7 @@ onMounted(cargarDatos);
                       <td><button class="admin-row-action" type="button" disabled>Asignar</button></td>
                     </tr>
                   </template>
+                  <tr v-if="!ofertas.length"><td colspan="5" class="admin-empty">No hay ofertas con clases.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -400,21 +493,57 @@ onMounted(cargarDatos);
             <div>
               <p class="admin-eyebrow">Acceso a cursos</p>
               <h1>Invitaciones</h1>
-              <p class="admin-lead">Códigos vinculados a un curso y turno concretos.</p>
+              <p class="admin-lead">Invitaciones para matricular alumnos en una o varias ofertas disponibles.</p>
             </div>
-            <span class="admin-design-tag">Prototipo</span>
           </div>
 
           <section class="admin-section">
             <div class="admin-section__heading">
-              <div><h2>Códigos de invitación</h2><p>Cada código permitirá inscribirse en un turno mientras queden cupos.</p></div>
-              <button class="admin-primary-button" type="button" disabled title="Se habilitará al conectar la gestión de invitaciones">Crear invitación</button>
+              <div><h2>Códigos de invitación</h2><p>Genera accesos limitados para matricular alumnos en ofertas activas.</p></div>
             </div>
-            <div class="invitation-empty">
-              <span class="material-icons" aria-hidden="true">confirmation_number</span>
-              <strong>Gestión de invitaciones</strong>
-              <span>La gestión permitirá crear, consultar y revocar códigos; el canje respetará la capacidad del turno.</span>
-            </div>
+            <form class="invitation-form" @submit.prevent="crearInvitacion">
+              <fieldset class="invitation-course-fieldset">
+                <legend>Ofertas incluidas</legend>
+                <div class="invitation-course-options">
+                  <label v-for="offer in ofertas" :key="offer.id" class="invitation-course-option" :class="{ 'is-disabled': offer.enrolled >= offer.capacity }">
+                    <input
+                      v-model="invitationForm.ofertaIds"
+                      type="checkbox"
+                      :value="offer.id"
+                      :disabled="offer.enrolled >= offer.capacity"
+                    />
+                    <span>{{ offer.course }} · {{ offer.shift }} · {{ offer.enrolled }}/{{ offer.capacity }} inscritos</span>
+                  </label>
+                  <p v-if="!ofertas.length" class="admin-empty">{{ cargandoOfertas ? 'Cargando ofertas...' : 'No hay ofertas activas para invitar. Crea primero una oferta.' }}</p>
+                </div>
+              </fieldset>
+
+              <div class="invitation-fields">
+                <label>Vigencia (horas)
+                  <input v-model.number="invitationForm.expiraEnHoras" type="number" min="1" max="8760" required />
+                </label>
+                <label>Usos máximos
+                  <input v-model.number="invitationForm.cupoMaximo" type="number" min="1" max="1000" required />
+                </label>
+              </div>
+
+              <button class="admin-primary-button" type="submit" :disabled="creandoInvitacion || invitationForm.ofertaIds.length === 0">
+                <span class="material-icons" aria-hidden="true">add_link</span>
+                {{ creandoInvitacion ? 'Creando...' : 'Crear invitación' }}
+              </button>
+            </form>
+
+            <article v-if="invitacionCreada" class="invitation-created" role="status">
+              <div class="invitation-created__copy">
+                <div><p class="admin-eyebrow">Código listo para compartir</p><strong class="invitation-created__code">{{ invitacionCreada.codigo }}</strong></div>
+                <button class="admin-secondary-button invitation-copy-button" type="button" :aria-label="codigoCopiado ? 'Código copiado' : 'Copiar código'" :title="codigoCopiado ? 'Código copiado' : 'Copiar código'" @click="copiarCodigoInvitacion">
+                  <span class="material-icons" aria-hidden="true">{{ codigoCopiado ? 'check' : 'content_copy' }}</span>
+                  {{ codigoCopiado ? 'Copiado' : 'Copiar' }}
+                </button>
+              </div>
+              <p>{{ invitacionCreada.ofertas?.length ? invitacionCreada.ofertas.map((offer) => `${offer.curso} · ${offer.turno}`).join(', ') : invitacionCreada.cursos?.join(', ') }}</p>
+              <small>Vence {{ new Date(invitacionCreada.expiraEn).toLocaleString('es') }} · {{ invitacionCreada.cupoMaximo }} usos</small>
+            </article>
           </section>
         </div>
       </div>
@@ -429,9 +558,12 @@ onMounted(cargarDatos);
   --line: #e3e8e4;
   --paper: #fff;
   --canvas: #f4f6f3;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   display: grid;
   grid-template-columns: 238px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   background: var(--canvas);
   color: var(--ink);
@@ -441,15 +573,20 @@ onMounted(cargarDatos);
 :global(.admin-shell) {
   width: 100%;
   max-width: none;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   margin: 0;
   padding: 0;
+  overflow: hidden;
 }
 
 .admin-rail {
   display: flex;
   flex-direction: column;
-  min-height: 760px;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
   padding: 1.4rem 0.9rem 1rem;
   background: #223a33;
   color: #eef3ef;
@@ -514,12 +651,12 @@ onMounted(cargarDatos);
 .admin-logout .material-icons { font-size: 1rem; }
 .admin-logout:hover { color: white; opacity: 1; }
 
-.admin-main { min-width: 0; }
+.admin-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .admin-topbar { min-height: 59px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0 2rem; border-bottom: 1px solid var(--line); background: var(--paper); }
 .admin-breadcrumb { display: flex; align-items: center; gap: 0.6rem; color: #89938e; font-size: 0.76rem; }
 .admin-breadcrumb strong { color: #35443e; font-weight: 600; }
 .admin-topbar__date { color: #7d8982; font-size: 0.76rem; }
-.admin-content { width: min(100%, 1440px); margin: 0 auto; padding: 2rem clamp(1.1rem, 3vw, 2.3rem) 3rem; }
+.admin-content { width: min(100%, 1440px); min-height: 0; flex: 1; margin: 0 auto; padding: 2rem clamp(1.1rem, 3vw, 2.3rem) 3rem; overflow-y: auto; overscroll-behavior: contain; }
 .admin-view__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.4rem; }
 .admin-eyebrow { margin: 0 0 0.35rem; color: #607d70; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
 .admin-view h1 { margin: 0; color: #263630; font: 500 1.85rem/1.2 Georgia, 'Times New Roman', serif; }
@@ -596,6 +733,28 @@ onMounted(cargarDatos);
 .invitation-empty .material-icons { color: #6d8c7b; font-size: 2rem; }
 .invitation-empty strong { color: #43534a; font-size: 0.88rem; }
 .invitation-empty span:last-child { max-width: 380px; color: #8d9991; font-size: 0.74rem; line-height: 1.5; }
+.invitation-form { display: grid; gap: 1.25rem; margin-top: 1.25rem; }
+.invitation-course-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.invitation-course-fieldset legend { margin-bottom: 0.65rem; color: #52625a; font-size: 0.82rem; font-weight: 700; }
+.invitation-course-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.5rem; }
+.invitation-course-option { display: flex; min-height: 42px; align-items: center; gap: 0.6rem; padding: 0.55rem 0.7rem; border: 1px solid #dce4de; border-radius: 6px; color: #34443b; font-size: 0.82rem; cursor: pointer; }
+.invitation-course-option input { width: 16px; height: 16px; accent-color: #356b55; }
+.invitation-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 0.8rem; }
+.invitation-fields label { display: grid; gap: 0.4rem; color: #52625a; font-size: 0.78rem; font-weight: 650; }
+.invitation-fields input { width: 100%; min-height: 40px; padding: 0.5rem 0.65rem; border: 1px solid #cfdad2; border-radius: 6px; background: #fff; color: #23332e; }
+.invitation-form > .admin-primary-button { display: inline-flex; width: fit-content; align-items: center; gap: 0.45rem; }
+.invitation-form > .admin-primary-button .material-icons { font-size: 1.1rem; }
+.invitation-created { display: grid; gap: 0.55rem; margin-top: 1.25rem; padding: 1rem; border: 1px solid #bed8c7; border-left: 4px solid #397452; border-radius: 6px; background: #f2f8f3; color: #34443b; }
+.invitation-created__copy { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.invitation-created__copy .admin-eyebrow { margin: 0 0 0.25rem; }
+.invitation-created__code { color: #1f5139; font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+.invitation-copy-button { display: inline-flex; align-items: center; gap: 0.4rem; }
+.invitation-copy-button .material-icons { font-size: 1rem; }
+.invitation-created p, .invitation-created small { margin: 0; color: #5f7066; }
+@media (max-width: 600px) {
+  .invitation-fields { grid-template-columns: 1fr; }
+  .invitation-created__copy { align-items: flex-start; flex-direction: column; }
+}
 .admin-prototype-banner { display: flex; align-items: center; gap: 0.5rem; margin: -0.25rem 0 1rem; color: #79877e; font-size: 0.7rem; }
 .admin-prototype-banner .material-icons { color: #9a8057; font-size: 1rem; }
 .enrollment-rule__capacity { display: flex; align-items: center; gap: 0.8rem; padding: 1rem 1.1rem 0.45rem; color: #758179; font-size: 0.75rem; line-height: 1.35; }
@@ -636,7 +795,7 @@ onMounted(cargarDatos);
 }
 
 @media (max-width: 680px) {
-  .admin-app { min-height: calc(100vh - 2rem); grid-template-columns: 1fr; overflow: visible; }
+  .admin-app { height: 100vh; height: 100dvh; min-height: 0; grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
   .admin-rail { min-height: 0; padding: 0.8rem; }
   .admin-brand { padding: 0.2rem 0.25rem 0.75rem; }
   .admin-rail__label, .admin-rail__bottom { display: none; }

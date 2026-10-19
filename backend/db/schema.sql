@@ -28,6 +28,57 @@ CREATE TABLE IF NOT EXISTS UsuarioCurso (
     FOREIGN KEY (usuario_id) REFERENCES Usuario (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS Curso (
+  id INT NOT NULL AUTO_INCREMENT,
+  nombre VARCHAR(100) NOT NULL,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_curso_nombre (nombre)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS OfertaCurso (
+  id INT NOT NULL AUTO_INCREMENT,
+  curso_id INT NOT NULL,
+  turno VARCHAR(30) NOT NULL,
+  hora_inicio TIME NOT NULL,
+  hora_fin TIME NOT NULL,
+  cupo_maximo INT NOT NULL,
+  activa TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_oferta_curso_turno (curso_id, turno),
+  KEY idx_oferta_curso_activa (activa),
+  CONSTRAINT fk_oferta_curso FOREIGN KEY (curso_id) REFERENCES Curso(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS Clase (
+  id INT NOT NULL AUTO_INCREMENT,
+  oferta_id INT NOT NULL,
+  materia VARCHAR(100) NOT NULL,
+  nombre VARCHAR(100) NOT NULL,
+  modalidad ENUM('semanal', 'entregas') NOT NULL DEFAULT 'semanal',
+  horario VARCHAR(150) DEFAULT NULL,
+  codigo_legacy VARCHAR(100) DEFAULT NULL,
+  created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_clase_oferta_nombre (oferta_id, nombre),
+  KEY idx_clase_codigo_legacy (codigo_legacy),
+  CONSTRAINT fk_clase_oferta FOREIGN KEY (oferta_id) REFERENCES OfertaCurso(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS MatriculaOferta (
+  id INT NOT NULL AUTO_INCREMENT,
+  usuario_id INT NOT NULL,
+  oferta_id INT NOT NULL,
+  created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_matricula_usuario_oferta (usuario_id, oferta_id),
+  KEY idx_matricula_oferta (oferta_id),
+  CONSTRAINT fk_matricula_usuario FOREIGN KEY (usuario_id) REFERENCES Usuario(id) ON DELETE CASCADE,
+  CONSTRAINT fk_matricula_oferta FOREIGN KEY (oferta_id) REFERENCES OfertaCurso(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS Tarea (
   id INT NOT NULL AUTO_INCREMENT,
   titulo VARCHAR(150) NOT NULL,
@@ -47,6 +98,7 @@ CREATE TABLE IF NOT EXISTS Evaluacion (
   max_preguntas INT NOT NULL DEFAULT 50,
   preguntas_por_intento INT NOT NULL DEFAULT 20,
   fecha_fin DATE DEFAULT NULL,
+  categoria ENUM('evaluacion', 'examen_final') NOT NULL DEFAULT 'evaluacion',
   created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -93,18 +145,6 @@ CREATE TABLE IF NOT EXISTS IntentoPregunta (
     FOREIGN KEY (pregunta_id) REFERENCES Pregunta (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS IntentoPregunta (
-  intento_id INT NOT NULL,
-  pregunta_id INT NOT NULL,
-  orden SMALLINT UNSIGNED NOT NULL,
-  PRIMARY KEY (intento_id, pregunta_id),
-  UNIQUE KEY uq_intento_pregunta_orden (intento_id, orden),
-  CONSTRAINT fk_intentopregunta_intento
-    FOREIGN KEY (intento_id) REFERENCES Intento (id) ON DELETE CASCADE,
-  CONSTRAINT fk_intentopregunta_pregunta
-    FOREIGN KEY (pregunta_id) REFERENCES Pregunta (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE IF NOT EXISTS Respuesta (
   id INT NOT NULL AUTO_INCREMENT,
   intento_id INT NOT NULL,
@@ -126,6 +166,7 @@ CREATE TABLE IF NOT EXISTS InvitacionCurso (
   codigo_hash CHAR(64) NOT NULL,
   codigo_ultimos4 VARCHAR(4) NOT NULL,
   cursos_json TEXT NOT NULL,
+  oferta_ids_json TEXT DEFAULT NULL,
   creado_por VARCHAR(100) DEFAULT NULL,
   expira_en DATETIME NOT NULL,
   cupo_maximo INT NOT NULL DEFAULT 1,

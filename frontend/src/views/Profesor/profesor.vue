@@ -1,33 +1,63 @@
 <template>
   <section class="teacher-dashboard">
-    <aside class="teacher-sidebar">
-      <div class="teacher-sidebar__brand">
-        <q-icon name="school" size="30px" color="white" />
-        <div>
-          <p>Dashboard docente</p>
-          <strong>Profesor</strong>
-        </div>
-      </div>
+    <aside class="teacher-rail">
+      <a class="teacher-brand" href="#panel-docente" @click.prevent="activeSection = 'dashboard'">
+        <span class="teacher-brand__mark">A</span>
+        <span>
+          <strong>Aula</strong>
+          <small>Docencia</small>
+        </span>
+      </a>
 
-      <q-list bordered class="teacher-nav">
-        <q-item
+      <p class="teacher-rail__label">Espacio de trabajo</p>
+      <nav class="teacher-nav" aria-label="Navegación docente">
+        <button
           v-for="item in navItems"
           :key="item.key"
-          clickable
-          :active="activeSection === item.key"
-          active-class="teacher-nav__item--active"
+          type="button"
+          :class="['teacher-nav__item', { 'is-active': activeSection === item.key }]"
           @click="activeSection = item.key"
         >
-          <q-item-section avatar>
-            <q-icon :name="item.icon" color="primary" />
-          </q-item-section>
-          <q-item-section>{{ item.label }}</q-item-section>
-        </q-item>
-      </q-list>
+          <span class="material-icons" aria-hidden="true">{{ item.icon }}</span>
+          <span>{{ item.label }}</span>
+        </button>
+      </nav>
+
+      <div class="teacher-rail__bottom">
+        <div class="teacher-account">
+          <button
+            type="button"
+            class="teacher-account__avatar"
+            aria-label="Abrir perfil"
+            title="Abrir perfil"
+            :class="{ 'is-active': activeSection === 'perfil' }"
+            @click="abrirPerfil"
+          >{{ (props.user?.nombre || props.user?.usuario || 'P').slice(0, 1).toUpperCase() }}</button>
+          <span class="teacher-account__text">
+            <strong>{{ props.user?.nombre || props.user?.usuario || 'Profesor' }}</strong>
+            <small>Profesor</small>
+          </span>
+        </div>
+      </div>
     </aside>
 
     <div class="teacher-main">
-      <q-card flat bordered class="teacher-hero">
+      <header class="teacher-app-header">
+        <div class="teacher-app-header__breadcrumb">
+          <span>Docencia</span>
+          <span aria-hidden="true">/</span>
+          <strong>Panel docente</strong>
+        </div>
+        <div class="teacher-app-header__actions">
+          <span class="teacher-app-header__date">{{ props.headerDate }}</span>
+        </div>
+      </header>
+
+      <section v-if="props.errorMessage" class="alert error" role="alert">{{ props.errorMessage }}</section>
+      <section v-if="props.successMessage" class="alert success" role="status">{{ props.successMessage }}</section>
+
+      <div class="teacher-main__scroll">
+      <q-card v-if="activeSection !== 'perfil'" flat bordered class="teacher-hero">
         <q-card-section class="row items-start justify-between q-col-gutter-lg">
           <div class="col-12 col-md-7">
             <p class="teacher-kicker">{{ currentSectionMeta.kicker }}</p>
@@ -54,6 +84,50 @@
         </q-card-section>
       </q-card>
 
+      <section v-if="activeSection === 'perfil'" class="teacher-profile">
+        <header class="teacher-profile__heading">
+          <div>
+            <p class="teacher-section__kicker">Cuenta</p>
+            <h2>Perfil del profesor</h2>
+          </div>
+          <q-btn flat color="primary" icon="arrow_back" label="Volver al panel" @click="volverDesdePerfil" />
+        </header>
+
+        <div class="teacher-profile__grid">
+          <q-card flat bordered class="teacher-section teacher-profile__identity">
+            <span class="teacher-profile__avatar" aria-hidden="true">
+              {{ (props.user?.nombre || props.user?.usuario || 'P').slice(0, 1).toUpperCase() }}
+            </span>
+            <div>
+              <p class="teacher-section__kicker">Cuenta docente</p>
+              <h3>{{ props.user?.nombre || 'Profesor' }}</h3>
+              <p>{{ props.user?.usuario || 'Sin usuario' }}</p>
+              <p>{{ props.user?.email || 'Sin correo registrado' }}</p>
+            </div>
+          </q-card>
+
+          <q-card flat bordered class="teacher-section teacher-profile__security">
+            <q-card-section>
+              <p class="teacher-section__kicker">Seguridad</p>
+              <h3>Contraseña</h3>
+              <p>El cambio de contraseña todavía no está disponible.</p>
+              <q-btn outline color="primary" icon="lock_reset" label="Cambiar contraseña" disable />
+            </q-card-section>
+          </q-card>
+
+          <q-card flat bordered class="teacher-section teacher-profile__session">
+            <q-card-section class="row items-center justify-between q-col-gutter-md">
+              <div>
+                <p class="teacher-section__kicker">Sesión</p>
+                <h3>Cuenta activa</h3>
+                <p>{{ props.user?.usuario || 'Vista previa' }} · Profesor</p>
+              </div>
+              <q-btn flat color="negative" icon="logout" label="Cerrar sesión" @click="emit('logout')" />
+            </q-card-section>
+          </q-card>
+        </div>
+      </section>
+
       <section v-if="activeSection === 'dashboard'" class="teacher-stats">
         <q-card v-for="card in resumenCards" :key="card.label" flat bordered class="teacher-stat-card">
           <q-card-section class="row items-center no-wrap justify-between">
@@ -77,7 +151,7 @@
         </q-card-section>
 
         <q-card-section class="teacher-course-grid">
-          <q-card v-for="course in visibleCourses" :key="course.key" flat bordered class="teacher-course-card">
+          <q-card v-for="course in visibleCourses" :key="course.id" flat bordered class="teacher-course-card">
             <q-card-section class="row items-center justify-between">
               <strong>{{ course.course }}</strong>
               <q-icon name="calendar_month" color="primary" />
@@ -96,6 +170,9 @@
                 </div>
               </div>
             </q-card-section>
+          </q-card>
+          <q-card v-if="!visibleCourses.length" flat bordered class="teacher-section teacher-offers-empty">
+            {{ props.cargandoOfertas ? 'Cargando ofertas...' : 'No hay cursos u ofertas disponibles todavía.' }}
           </q-card>
         </q-card-section>
       </q-card>
@@ -214,6 +291,20 @@
           <template #body-cell-fecha_fin="slotProps">
             <q-td :props="slotProps">{{ formatDateOnly(slotProps.row.fecha_fin) }}</q-td>
           </template>
+          <template #body-cell-categoria="slotProps">
+            <q-td :props="slotProps">
+              <q-select
+                dense
+                borderless
+                emit-value
+                map-options
+                :model-value="slotProps.row.categoria || 'evaluacion'"
+                :options="evaluationCategoryOptions"
+                aria-label="Categoría de evaluación"
+                @update:model-value="(categoria) => emit('actualizar-categoria-evaluacion', { evaluacionId: slotProps.row.id, categoria })"
+              />
+            </q-td>
+          </template>
           <template #body-cell-acciones="slotProps">
             <q-td :props="slotProps" class="text-right">
               <q-btn
@@ -292,6 +383,7 @@
           </q-card-section>
         </q-card>
       </section>
+      </div>
     </div>
 
     <q-dialog v-model="taskDialogOpen" maximized persistent transition-show="slide-up" transition-hide="slide-down">
@@ -331,6 +423,7 @@
 
         <q-card-section class="teacher-form-grid">
           <q-input v-model="evalForm.titulo" outlined label="Título" @update:model-value="limpiarMensajeImportacion" />
+                    <q-select v-model="evalForm.categoria" outlined label="Categoría" :options="evaluationCategoryOptions" option-label="label" option-value="value" emit-value map-options />
           <q-select v-model="evalForm.clase" outlined label="Clase / materia" :options="classOptions" option-label="label" option-value="value" emit-value map-options @update:model-value="handleEvaluationClassUpdate" />
           <q-input
             v-model.number="evalForm.preguntasPorIntento"
@@ -470,10 +563,15 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
-import { courseOfferings } from '../../data/courseOfferings.js'
+import { computed, onMounted, ref, watch } from 'vue'
 
 const props = defineProps({
+  user: { type: Object, default: () => ({}) },
+  headerDate: { type: String, default: '' },
+  errorMessage: { type: String, default: '' },
+  successMessage: { type: String, default: '' },
+  ofertas: { type: Array, default: () => [] },
+  cargandoOfertas: { type: Boolean, default: false },
   evalForm: { type: Object, required: true },
   tareaForm: { type: Object, required: true },
   evaluacionesProfesor: { type: Array, default: () => [] },
@@ -487,7 +585,7 @@ const props = defineProps({
   estadoImportacionExcel: { type: String, default: 'info' }
 })
 
-const emit = defineEmits(['agregar-pregunta', 'crear-evaluacion', 'importar-evaluacion-excel', 'limpiar-importacion-excel', 'cargar-evaluaciones', 'editar-evaluacion', 'cancelar-edicion-evaluacion', 'crear-tarea'])
+const emit = defineEmits(['agregar-pregunta', 'crear-evaluacion', 'importar-evaluacion-excel', 'limpiar-importacion-excel', 'cargar-evaluaciones', 'cargar-ofertas', 'editar-evaluacion', 'actualizar-categoria-evaluacion', 'cancelar-edicion-evaluacion', 'crear-tarea', 'logout'])
 
 const taskDialogOpen = ref(false)
 const evaluationDialogOpen = ref(false)
@@ -496,7 +594,17 @@ const preguntasDesdeExcel = ref(false)
 const currentQuestionIndex = ref(0)
 const currentQuestionStep = ref(1)
 const activeSection = ref('dashboard')
+const sectionBeforeProfile = ref('dashboard')
 const selectedCourse = ref('todos')
+
+const abrirPerfil = () => {
+  if (activeSection.value !== 'perfil') sectionBeforeProfile.value = activeSection.value
+  activeSection.value = 'perfil'
+}
+
+const volverDesdePerfil = () => {
+  activeSection.value = sectionBeforeProfile.value
+}
 
 const navItems = [
   { key: 'dashboard', label: 'Dashboard principal', icon: 'dashboard' },
@@ -510,10 +618,16 @@ const navItems = [
 const evaluationColumns = [
   { name: 'titulo', label: 'Evaluación', field: 'titulo', align: 'left', sortable: true },
   { name: 'curso', label: 'Curso', field: 'curso', align: 'left', sortable: true },
+  { name: 'categoria', label: 'Categoría', field: 'categoria', align: 'left' },
   { name: 'created_at', label: 'Fecha de creación', field: 'created_at', align: 'left', sortable: true },
   { name: 'fecha_fin', label: 'Fecha de fin', field: 'fecha_fin', align: 'left', sortable: true },
   { name: 'intentos', label: 'Intentos', field: 'intentos', align: 'right', sortable: true },
   { name: 'acciones', label: '', field: 'id', align: 'right' }
+]
+
+const evaluationCategoryOptions = [
+  { label: 'Evaluación', value: 'evaluacion' },
+  { label: 'Examen final', value: 'examen_final' }
 ]
 
 const formatDateTime = (value) => {
@@ -529,14 +643,12 @@ const formatDateOnly = (value) => {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('es')
 }
 
-const courseOptions = [
-  ...courseOfferings.map((offering) => ({
+const courseOptions = computed(() => props.ofertas.map((offering) => ({
     label: `${offering.course} · ${offering.shift} (${offering.start}-${offering.end})`,
     value: offering.id
-  }))
-]
+  })))
 
-const classOptions = computed(() => courseOfferings
+const classOptions = computed(() => props.ofertas
   .filter((offering) => selectedCourse.value === 'todos' || offering.id === selectedCourse.value)
   .flatMap((offering) => offering.classes.map((clase) => ({
     label: `${clase.name} · ${clase.subject} · ${offering.course} / ${offering.shift}`,
@@ -583,13 +695,16 @@ const sectionMeta = {
 
 const selectedCourseLabel = computed(() => selectedCourse.value === 'todos'
   ? 'Todos los cursos'
-  : courseOptions.find((option) => option.value === selectedCourse.value)?.label || 'Todos los cursos')
+  : courseOptions.value.find((option) => option.value === selectedCourse.value)?.label || 'Todos los cursos')
 
 const currentSectionMeta = computed(() => sectionMeta[activeSection.value])
 
 watch(activeSection, (section) => {
   if (section === 'evaluaciones') emit('cargar-evaluaciones')
+  if (section === 'dashboard' || section === 'cursos') emit('cargar-ofertas')
 })
+
+onMounted(() => emit('cargar-ofertas'))
 
 watch(() => props.evaluacionEnEdicionId, (evaluacionId) => {
   if (evaluacionId !== null) evaluationDialogOpen.value = true
@@ -622,7 +737,7 @@ const seleccionarOferta = (offeringId) => {
   selectedCourse.value = offeringId
   if (offeringId === 'todos') return
 
-  const offering = courseOfferings.find((item) => item.id === offeringId)
+  const offering = props.ofertas.find((item) => item.id === offeringId)
   const clase = offering?.classes[0]
   if (!clase) return
 
@@ -634,8 +749,8 @@ const seleccionarOferta = (offeringId) => {
 }
 
 const visibleCourses = computed(() => {
-  if (selectedCourse.value === 'todos') return courseOfferings
-  return courseOfferings.filter((offering) => offering.id === selectedCourse.value)
+  if (selectedCourse.value === 'todos') return props.ofertas
+  return props.ofertas.filter((offering) => offering.id === selectedCourse.value)
 })
 
 const resumenCards = computed(() => [
@@ -916,8 +1031,12 @@ const handleExcelFileUpdate = () => {
   --teacher-canvas: #f4f6f3;
   --q-primary: #315d50;
   grid-column: 1 / -1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   display: grid;
   grid-template-columns: 238px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 0;
   align-items: start;
   overflow: hidden;
@@ -926,71 +1045,155 @@ const handleExcelFileUpdate = () => {
   color: var(--teacher-ink);
 }
 
-.teacher-sidebar {
-  position: sticky;
-  top: 1rem;
-  min-height: 760px;
+.teacher-rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
   padding: 1.4rem 0.9rem 1rem;
   background: #223a33;
   color: #eef3ef;
 }
 
-.teacher-sidebar__brand {
-  min-height: 54px;
-  padding: 0.25rem 0.7rem 1.8rem;
+.teacher-brand {
   display: flex;
-  gap: 0.75rem;
   align-items: center;
+  gap: 0.75rem;
+  padding: 0.25rem 0.7rem 1.8rem;
+  color: inherit;
+  text-decoration: none;
 }
 
-.teacher-sidebar__brand p,
-.teacher-sidebar__brand strong {
-  margin: 0;
+.teacher-brand__mark {
+  width: 39px;
+  height: 39px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #91afa3;
+  color: #c5d9d0;
+  font: 600 1.35rem Georgia, serif;
 }
 
-.teacher-sidebar__brand p {
-  color: #a8beb4;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+.teacher-brand strong,
+.teacher-brand small,
+.teacher-account__text strong,
+.teacher-account__text small {
+  display: block;
 }
 
-.teacher-nav {
-  border: 0 !important;
-  border-radius: 0;
-  background: transparent;
-}
+.teacher-brand strong { font-size: 0.95rem; }
+.teacher-brand small { margin-top: 0.15rem; color: #a8beb4; font-size: 0.72rem; }
+.teacher-rail__label { margin: 0 0 0.7rem 0.7rem; color: #99ada4; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.teacher-nav { display: grid; gap: 0.3rem; }
 
-.teacher-nav :deep(.q-item) {
+.teacher-nav__item {
   min-height: 43px;
-  margin-bottom: 0.3rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 0.7rem;
   border: 1px solid transparent;
   border-radius: 3px;
+  background: transparent;
   color: #d1ddd7;
+  text-align: left;
   font-size: 0.85rem;
 }
 
-.teacher-nav :deep(.q-item .q-icon) {
-  color: #a8beb4;
-}
-
-.teacher-nav :deep(.teacher-nav__item--active) {
-  border-color: rgba(197, 217, 208, 0.13);
-  background: #315348;
-  color: #fff;
-}
-
-.teacher-nav :deep(.teacher-nav__item--active .q-icon) {
-  color: #c3d9cf;
-}
+.teacher-nav__item .material-icons { font-size: 1.1rem; color: #a8beb4; }
+.teacher-nav__item:hover { background: rgba(255, 255, 255, 0.06); opacity: 1; }
+.teacher-nav__item.is-active { border-color: rgba(197, 217, 208, 0.13); background: #315348; color: white; }
+.teacher-nav__item.is-active .material-icons { color: #c3d9cf; }
+.teacher-rail__bottom { margin-top: auto; padding: 1rem 0.5rem 0; border-top: 1px solid rgba(255, 255, 255, 0.12); }
+.teacher-account { display: flex; align-items: center; gap: 0.65rem; padding: 0 0.15rem; }
+.teacher-account__avatar { width: 32px; height: 32px; display: grid; place-items: center; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; background: #c4d8ce; color: #29473c; font-size: 0.8rem; font-weight: 700; cursor: pointer; }
+.teacher-account__avatar:hover,
+.teacher-account__avatar.is-active { background: #dce9e2; box-shadow: 0 0 0 3px rgba(197, 217, 208, 0.16); opacity: 1; }
+.teacher-account__text strong { max-width: 145px; overflow: hidden; color: #f3f6f3; font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
+.teacher-account__text small { margin-top: 0.12rem; color: #a8beb4; font-size: 0.68rem; }
 
 .teacher-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.teacher-main__scroll {
+  min-height: 0;
+  flex: 1;
   display: grid;
   align-content: start;
   gap: 1rem;
-  min-width: 0;
   padding: 1.5rem clamp(1rem, 2.4vw, 2rem) 2rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
+
+.teacher-profile {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+  width: min(100%, 1080px);
+  margin: 0 auto;
+}
+
+.teacher-profile__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.teacher-profile__heading h2,
+.teacher-profile__identity h3,
+.teacher-profile__security h3,
+.teacher-profile__session h3 {
+  margin: 0;
+  color: #263630;
+}
+
+.teacher-profile__heading h2 { font: 500 1.85rem/1.2 Georgia, 'Times New Roman', serif; }
+
+.teacher-profile__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.teacher-profile__identity,
+.teacher-profile__security,
+.teacher-profile__session {
+  border: 1px solid var(--teacher-line) !important;
+  border-radius: 3px;
+  background: var(--teacher-paper);
+}
+
+.teacher-profile__identity {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.teacher-profile__avatar {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #e6eee9;
+  color: #315d50;
+  font: 600 1.25rem Georgia, 'Times New Roman', serif;
+}
+
+.teacher-profile__identity p:last-child { margin-bottom: 0; color: var(--teacher-muted); }
+.teacher-profile__security p,
+.teacher-profile__session p { color: var(--teacher-muted); }
+.teacher-profile__session { grid-column: 1 / -1; }
 
 .teacher-hero {
   border: 1px solid var(--teacher-line) !important;
@@ -1285,17 +1488,18 @@ const handleExcelFileUpdate = () => {
 @media (max-width: 1180px) {
   .teacher-dashboard {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
-  .teacher-sidebar {
-    position: static;
+  .teacher-rail {
     min-height: 0;
+    height: auto;
     padding: 0.8rem;
   }
 
-  .teacher-sidebar__brand { padding: 0.2rem 0.25rem 0.75rem; }
+  .teacher-brand { padding: 0.2rem 0.25rem 0.75rem; }
   .teacher-nav { display: flex; overflow-x: auto; }
-  .teacher-nav :deep(.q-item) { flex: 0 0 auto; min-height: 40px; }
+  .teacher-nav__item { flex: 0 0 auto; min-height: 40px; }
 
   .teacher-stats,
   .teacher-course-grid,
@@ -1304,6 +1508,30 @@ const handleExcelFileUpdate = () => {
   .teacher-grid--bottom {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+@media (max-width: 680px) {
+  .teacher-rail__label { display: none; }
+  .teacher-rail__bottom { display: flex; justify-content: flex-end; margin-top: 0; padding: 0; border-top: 0; }
+  .teacher-account__text { display: none; }
+
+  .teacher-nav {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.25rem;
+  }
+
+  .teacher-nav__item {
+    min-height: 52px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.1rem;
+    padding: 0.2rem;
+    font-size: 0.65rem;
+    text-align: center;
+  }
+
+  .teacher-nav__item .material-icons { font-size: 1rem; }
 }
 
 @media (max-width: 760px) {
@@ -1332,10 +1560,14 @@ const handleExcelFileUpdate = () => {
 
   .teacher-question-pagination,
   .teacher-stepper-head,
-  .teacher-wizard-actions {
+  .teacher-wizard-actions,
+  .teacher-profile__heading {
     flex-direction: column;
     align-items: stretch;
   }
+
+  .teacher-profile__grid { grid-template-columns: 1fr; }
+  .teacher-profile__session { grid-column: auto; }
 }
 
 .teacher-import-feedback {

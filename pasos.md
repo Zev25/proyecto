@@ -104,3 +104,10 @@ pnpm build
 5. Si cambias el esquema, actualiza `backend/db/schema.sql` y esta guia en el mismo cambio. No reemplaces el esquema compartido con un dump de una base local.
 
 El archivo `.gitignore` excluye dependencias, compilados, secretos locales, logs y archivos subidos; conserva los ejemplos `.env.example`, lockfiles y documentacion.
+
+## Parcial del proyecto — 22 de octubre de 2026
+
+El parcial consiste en presentar partes del proyecto. Antes de la fecha:
+
+- [ ] Decidir qué partes del proyecto se van a mostrar.
+- [ ] Empezar a pulir esas partes una vez definida la selección.

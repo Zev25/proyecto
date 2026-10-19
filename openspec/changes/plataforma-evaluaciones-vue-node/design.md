@@ -64,6 +64,27 @@ Ver motivacion en proposal.md (seccion Why). El proyecto inicia sin implementaci
 - Interfaz: mostrar el tamano actual del banco en el editor, indicar el exceso y deshabilitar el guardado hasta corregirlo.
 - Rationale: evitar evaluaciones guardadas que inevitablemente fallarian al iniciar un intento por falta de preguntas.
 
+### 9) Idea futura de base de datos online
+- Decision: posponer la evaluacion de proveedores de base de datos online hasta despues de la presentacion. No hay proveedor seleccionado, configuracion remota ni migracion dentro del alcance actual.
+
+### 9) Categorias y promedio de resultados
+- Decision: cada evaluacion se clasifica como `evaluacion` o `examen_final`; las evaluaciones existentes se migran como `evaluacion` y el profesor puede reclasificar solo el tipo incluso si ya hay intentos.
+- Decision: el alumno accede a vistas separadas para ambas categorias, pero conserva el mismo flujo de intento aleatorio.
+- Decision: cada intento enviado aporta una nota independiente al promedio de su categoria. La nota se normaliza a escala 10 usando el puntaje maximo de las preguntas seleccionadas; los intentos iniciados pero no enviados no cuentan.
+- Rationale: separar la experiencia academica sin cambiar la trazabilidad ni el contenido historico de intentos y permitir comparar evaluaciones con puntajes maximos distintos.
+
+### 10) Creacion y canje de invitaciones
+- Decision: el administrador crea codigos para uno o mas cursos, con duracion y cantidad de usos configurables; la interfaz muestra el codigo generado para compartirlo.
+- Decision: el alumno canjea el codigo desde Cursos. El backend conserva la matricula existente, agrega solo cursos nuevos y mantiene atomica la validacion de vigencia, cupo y duplicados.
+- Rationale: conectar las pantallas con las rutas transaccionales existentes sin duplicar reglas de matricula en el frontend.
+
+### 11) Persistencia del catalogo academico
+- Decision: reemplazar `courseOfferings.js` por tablas `Curso`, `OfertaCurso`, `Clase` y `MatriculaOferta`; no importar los conteos de demostracion como matriculas.
+- Decision: una oferta representa curso + turno/horario + cupo; sus clases guardan materia, seccion, modalidad y horario, con `codigo_legacy` nullable para compatibilidad temporal con tareas/evaluaciones que aun usan `curso` string.
+- Decision: las invitaciones nuevas apuntan a IDs de ofertas y el canje crea todas las matriculas de forma atomica, valida cupo disponible y agrega los codigos legacy de sus clases a `UsuarioCurso`. Los codigos existentes basados en `cursos_json` siguen siendo aceptados.
+- Decision: al iniciar, la base queda sin cursos/ofertas de ejemplo; el administrador los crea desde la UI. El conteo de inscritos se calcula desde `MatriculaOferta`.
+- Rationale: dar una unica fuente persistente para admin, profesor y matricula sin convertir datos ficticios en registros academicos reales.
+
 ## Risks / Trade-offs
 
 - [Riesgo] Aleatoriedad con dificultad desigual entre alumnos -> [Mitigacion] introducir etiquetado por dificultad y reglas de balanceo en fase posterior.
@@ -106,3 +127,5 @@ Esta estructura permite mantener el desarrollo modular y separar claramente la e
 - 2026-08-20: IA y analisis de entregas por archivo se mueven explicitamente a la ultima fase.
 - 2026-08-20: Se solicita documentacion continua, incluyendo decisiones surgidas en las charlas.
 - 2026-10-15: El profesor puede configurar de 1 a 50 preguntas por intento (20 por defecto) e importar bancos XLSX con encabezados definidos.
+- 2026-10-16: Se diferencian evaluaciones regulares y examenes finales; el alumno ve ambas categorias y el promedio sobre 10 incluye cada intento enviado, normalizado por su puntaje maximo.
+- 2026-10-16: Se habilita la gestion visual de invitaciones para que el admin genere codigos y el alumno los canjee desde Cursos, usando las validaciones existentes del backend.

@@ -27,7 +27,8 @@ const validarOferta = ({ curso, turno, horaInicio, horaFin, cupoMaximo, clases }
     || !MODALIDADES_VALIDAS.has(clase.modalidad)
     || (clase.modalidad === 'semanal' && !clase.horario)
     || (clase.horario && clase.horario.length > 150)
-    || (clase.codigoLegacy && clase.codigoLegacy.length > 100)
+    || !clase.codigoLegacy
+    || clase.codigoLegacy.length > 100
   ));
   if (claseInvalida) return 'CLASE_INVALIDA';
 
@@ -38,10 +39,20 @@ const validarOferta = ({ curso, turno, horaInicio, horaFin, cupoMaximo, clases }
   return null;
 };
 
-const listarOfertasAcademicas = async ({ incluirInactivas = false } = {}) => {
+const listarOfertasAcademicas = async ({ incluirInactivas = false, profesorUsuario = null } = {}) => {
   const connection = await conexion.getConnection();
 
   try {
+    let profesorId = null;
+    if (profesorUsuario) {
+      const [profesores] = await connection.query(
+        "SELECT id FROM Usuario WHERE usuario = ? AND tipo = 'profesor' AND estado = 'activo' LIMIT 1",
+        [profesorUsuario]
+      );
+      profesorId = profesores[0]?.id;
+      if (!profesorId) return [];
+    }
+
     const [ofertas] = await connection.query(
       `SELECT o.id, c.nombre AS curso, o.turno,
               TIME_FORMAT(o.hora_inicio, '%H:%i') AS hora_inicio,
@@ -51,7 +62,13 @@ const listarOfertasAcademicas = async ({ incluirInactivas = false } = {}) => {
        FROM OfertaCurso o
        JOIN Curso c ON c.id = o.curso_id
        ${incluirInactivas ? '' : 'WHERE o.activa = 1 AND c.activo = 1'}
+       ${profesorId ? `${incluirInactivas ? 'WHERE' : 'AND'} EXISTS (
+         SELECT 1 FROM Clase cl
+         JOIN ClaseProfesor cp ON cp.clase_id = cl.id
+         WHERE cl.oferta_id = o.id AND cp.profesor_id = ?
+       )` : ''}
        ORDER BY c.nombre ASC, o.turno ASC, o.id ASC`
+      , profesorId ? [profesorId] : []
     );
 
     if (ofertas.length === 0) return [];
@@ -59,22 +76,29 @@ const listarOfertasAcademicas = async ({ incluirInactivas = false } = {}) => {
     const ids = ofertas.map((oferta) => oferta.id);
     const placeholders = ids.map(() => '?').join(', ');
     const [clases] = await connection.query(
-      `SELECT oferta_id, materia, nombre, modalidad, horario, codigo_legacy
-       FROM Clase
-       WHERE oferta_id IN (${placeholders})
-       ORDER BY oferta_id ASC, materia ASC, nombre ASC`,
-      ids
+      `SELECT cl.id, cl.oferta_id, cl.materia, cl.nombre, cl.modalidad, cl.horario, cl.codigo_legacy,
+              u.usuario AS profesor_usuario, CONCAT_WS(' ', u.nombre, u.apellido) AS profesor_nombre
+       FROM Clase cl
+       LEFT JOIN ClaseProfesor cp ON cp.clase_id = cl.id
+       LEFT JOIN Usuario u ON u.id = cp.profesor_id
+       WHERE cl.oferta_id IN (${placeholders})
+       ${profesorId ? 'AND cp.profesor_id = ?' : ''}
+       ORDER BY cl.oferta_id ASC, cl.materia ASC, cl.nombre ASC`,
+      profesorId ? [...ids, profesorId] : ids
     );
     const clasesPorOferta = new Map();
 
     for (const clase of clases) {
       const lista = clasesPorOferta.get(clase.oferta_id) || [];
       lista.push({
+        id: clase.id,
         subject: clase.materia,
         name: clase.nombre,
         mode: clase.modalidad,
         schedule: clase.horario || 'Por entregas',
-        legacyCourse: clase.codigo_legacy
+        legacyCourse: clase.codigo_legacy,
+        profesorUsuario: clase.profesor_usuario || '',
+        profesorNombre: clase.profesor_nombre || ''
       });
       clasesPorOferta.set(clase.oferta_id, lista);
     }
@@ -90,6 +114,55 @@ const listarOfertasAcademicas = async ({ incluirInactivas = false } = {}) => {
       active: Boolean(oferta.activa),
       classes: clasesPorOferta.get(oferta.id) || []
     }));
+  } finally {
+    connection.release();
+  }
+};
+
+const asignarProfesorAClase = async ({ claseId, profesorUsuario }) => {
+  const id = Number(claseId);
+  if (!Number.isInteger(id) || id < 1) return { ok: false, code: 'CLASE_INVALIDA' };
+
+  const usuario = profesorUsuario === null || profesorUsuario === ''
+    ? null
+    : typeof profesorUsuario === 'string' ? profesorUsuario.trim() : undefined;
+  if (usuario === undefined) return { ok: false, code: 'PROFESOR_INVALIDO' };
+
+  const connection = await conexion.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const [clases] = await connection.query('SELECT id FROM Clase WHERE id = ? LIMIT 1', [id]);
+    if (!clases.length) {
+      await connection.rollback();
+      return { ok: false, code: 'CLASE_NO_ENCONTRADA' };
+    }
+
+    if (usuario) {
+      const [profesores] = await connection.query(
+        "SELECT id FROM Usuario WHERE usuario = ? AND tipo = 'profesor' AND estado = 'activo' LIMIT 1",
+        [usuario]
+      );
+      if (!profesores.length) {
+        await connection.rollback();
+        return { ok: false, code: 'PROFESOR_NO_ENCONTRADO' };
+      }
+
+      await connection.query(
+        `INSERT INTO ClaseProfesor (clase_id, profesor_id)
+         VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE profesor_id = VALUES(profesor_id)`,
+        [id, profesores[0].id]
+      );
+    } else {
+      await connection.query('DELETE FROM ClaseProfesor WHERE clase_id = ?', [id]);
+    }
+
+    await connection.commit();
+    return { ok: true };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
   } finally {
     connection.release();
   }
@@ -206,4 +279,4 @@ const listarOfertasAlumno = async (usuario) => {
   }
 };
 
-export { crearOfertaAcademica, listarOfertasAcademicas, listarOfertasAlumno };
+export { asignarProfesorAClase, crearOfertaAcademica, listarOfertasAcademicas, listarOfertasAlumno };

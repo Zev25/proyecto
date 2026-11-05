@@ -13,7 +13,7 @@ servidor.use(express.json());
 servidor.use(router);
 
 servidor.listen(port, () => {
-  console.log(`Servidor escuchando en http://localhost:${port}`);
+	console.log(`Servidor escuchando en http://localhost:${port}`);
 });
 
 export { servidor, router };

@@ -55,8 +55,8 @@ const crearEvaluacionConPreguntas = async ({
 
     const [evalResult] = await connection.query(
       `INSERT INTO Evaluacion
-        (titulo, curso, creado_por, max_preguntas, preguntas_por_intento, fecha_fin, categoria)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (titulo, curso, creado_por, max_preguntas, preguntas_por_intento, fecha_fin, categoria, publicada)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
       [titulo, curso || null, profesorUsuario, LIMITE_BANCO_PREGUNTAS, Number(preguntasPorIntento), fechaFin, categoria]
     );
 
@@ -105,7 +105,7 @@ const listarEvaluacionesDisponibles = async (cursos = null) => {
     const [evaluaciones] = await connection.query(
       `SELECT id, titulo, curso, creado_por, max_preguntas, preguntas_por_intento, categoria
        FROM Evaluacion
-       ${whereCursos}
+       ${whereCursos ? `${whereCursos} AND publicada = 1` : 'WHERE publicada = 1'}
        ORDER BY id DESC`,
       cursosArray
     );
@@ -121,7 +121,7 @@ const listarEvaluacionesProfesor = async (profesorUsuario) => {
 
   try {
     const [evaluaciones] = await connection.query(
-      `SELECT e.id, e.titulo, e.curso, e.categoria, e.preguntas_por_intento,
+      `SELECT e.id, e.titulo, e.curso, e.categoria, e.preguntas_por_intento, e.publicada,
               e.created_at, DATE_FORMAT(e.fecha_fin, '%Y-%m-%d') AS fecha_fin,
               COUNT(i.id) AS intentos
        FROM Evaluacion e
@@ -316,7 +316,7 @@ const iniciarIntentoAleatorio = async ({ evaluacionId, alumnoUsuario }) => {
     }
 
     const [evaluaciones] = await connection.query(
-      'SELECT id, curso, preguntas_por_intento FROM Evaluacion WHERE id = ? LIMIT 1',
+      'SELECT id, curso, preguntas_por_intento, publicada FROM Evaluacion WHERE id = ? LIMIT 1 FOR UPDATE',
       [evaluacionId]
     );
 
@@ -324,6 +324,11 @@ const iniciarIntentoAleatorio = async ({ evaluacionId, alumnoUsuario }) => {
     if (!evaluacion) {
       await connection.rollback();
       return { ok: false, code: 'EVALUACION_NO_ENCONTRADA' };
+    }
+
+    if (!evaluacion.publicada) {
+      await connection.rollback();
+      return { ok: false, code: 'EVALUACION_NO_PUBLICADA' };
     }
 
     const preguntasPorIntento = Number(evaluacion.preguntas_por_intento);
@@ -373,7 +378,7 @@ const iniciarIntentoAleatorio = async ({ evaluacionId, alumnoUsuario }) => {
     }
 
     const [intentoResult] = await connection.query(
-      'INSERT INTO Intento (evaluacion_id, alumno_id, alumno_usuario, nota_total) VALUES (?, ?, ?, 0)',
+      "INSERT INTO Intento (evaluacion_id, alumno_id, alumno_usuario, nota_total, estado) VALUES (?, ?, ?, 0, 'en_progreso')",
       [evaluacionId, alumno.id, alumnoUsuario]
     );
 
@@ -408,6 +413,59 @@ const iniciarIntentoAleatorio = async ({ evaluacionId, alumnoUsuario }) => {
   }
 };
 
+const cancelarIntentoAlumno = async ({ intentoId, alumnoUsuario }) => {
+  const connection = await conexion.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const [alumnos] = await connection.query(
+      "SELECT id FROM Usuario WHERE usuario = ? AND tipo = 'alumno' LIMIT 1 FOR UPDATE",
+      [alumnoUsuario]
+    );
+    const alumno = alumnos[0];
+    if (!alumno) {
+      await connection.rollback();
+      return { ok: false, code: 'ALUMNO_NO_ENCONTRADO' };
+    }
+
+    const [intentos] = await connection.query(
+      'SELECT id, estado FROM Intento WHERE id = ? AND alumno_id = ? LIMIT 1 FOR UPDATE',
+      [intentoId, alumno.id]
+    );
+    const intento = intentos[0];
+    if (!intento) {
+      await connection.rollback();
+      return { ok: false, code: 'INTENTO_NO_ENCONTRADO' };
+    }
+    if (intento.estado !== 'en_progreso') {
+      await connection.rollback();
+      return { ok: false, code: 'INTENTO_NO_CANCELABLE', estado: intento.estado };
+    }
+
+    const [respuestas] = await connection.query(
+      'SELECT id FROM Respuesta WHERE intento_id = ? LIMIT 1',
+      [intentoId]
+    );
+    if (respuestas[0]) {
+      await connection.rollback();
+      return { ok: false, code: 'INTENTO_CON_RESPUESTAS' };
+    }
+
+    await connection.query(
+      "UPDATE Intento SET estado = 'cancelado' WHERE id = ? AND alumno_id = ?",
+      [intentoId, alumno.id]
+    );
+    await connection.commit();
+    return { ok: true, intentoId };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
 const responderEvaluacionAuto = async ({ intentoId, evaluacionId, alumnoUsuario, respuestas }) => {
   const connection = await conexion.getConnection();
 
@@ -431,7 +489,7 @@ const responderEvaluacionAuto = async ({ intentoId, evaluacionId, alumnoUsuario,
     }
 
     const [intentos] = await connection.query(
-      `SELECT id FROM Intento
+      `SELECT id, estado FROM Intento
        WHERE id = ? AND evaluacion_id = ? AND alumno_id = ?
        LIMIT 1 FOR UPDATE`,
       [intentoId, evaluacionId, alumno.id]
@@ -440,6 +498,14 @@ const responderEvaluacionAuto = async ({ intentoId, evaluacionId, alumnoUsuario,
     if (!intentos[0]) {
       await connection.rollback();
       return { ok: false, code: 'INTENTO_NO_ENCONTRADO' };
+    }
+    if (intentos[0].estado === 'cancelado') {
+      await connection.rollback();
+      return { ok: false, code: 'INTENTO_CANCELADO' };
+    }
+    if (intentos[0].estado === 'completado') {
+      await connection.rollback();
+      return { ok: false, code: 'INTENTO_YA_RESPONDIDO' };
     }
 
     const [respuestasExistentes] = await connection.query(
@@ -503,7 +569,7 @@ const responderEvaluacionAuto = async ({ intentoId, evaluacionId, alumnoUsuario,
     }
 
     await connection.query(
-      'UPDATE Intento SET nota_total = ? WHERE id = ?',
+      "UPDATE Intento SET nota_total = ?, estado = 'completado' WHERE id = ?",
       [notaTotal, intentoId]
     );
 
@@ -580,14 +646,65 @@ const verDetalleIntento = async ({ intentoId, profesorUsuario }) => {
   }
 };
 
+const actualizarPublicacionEvaluacion = async ({ evaluacionId, profesorUsuario, publicada }) => {
+  const connection = await conexion.getConnection();
+
+  try {
+    const [result] = await connection.query(
+      'UPDATE Evaluacion SET publicada = ? WHERE id = ? AND creado_por = ?',
+      [publicada ? 1 : 0, evaluacionId, profesorUsuario]
+    );
+    return result.affectedRows > 0;
+  } finally {
+    connection.release();
+  }
+};
+
+const eliminarEvaluacion = async ({ evaluacionId, profesorUsuario }) => {
+  const connection = await conexion.getConnection();
+
+  try {
+    await connection.beginTransaction();
+    const [evaluaciones] = await connection.query(
+      'SELECT id FROM Evaluacion WHERE id = ? AND creado_por = ? LIMIT 1 FOR UPDATE',
+      [evaluacionId, profesorUsuario]
+    );
+    if (!evaluaciones.length) {
+      await connection.rollback();
+      return { ok: false, code: 'EVALUACION_NO_ENCONTRADA' };
+    }
+
+    const [intentos] = await connection.query(
+      'SELECT COUNT(*) AS total FROM Intento WHERE evaluacion_id = ?',
+      [evaluacionId]
+    );
+    if (Number(intentos[0]?.total || 0) > 0) {
+      await connection.rollback();
+      return { ok: false, code: 'EVALUACION_CON_INTENTOS' };
+    }
+
+    await connection.query('DELETE FROM Evaluacion WHERE id = ?', [evaluacionId]);
+    await connection.commit();
+    return { ok: true };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
 export {
+  actualizarPublicacionEvaluacion,
   crearEvaluacionConPreguntas,
+  eliminarEvaluacion,
   listarEvaluacionesDisponibles,
   listarEvaluacionesProfesor,
   obtenerEvaluacionProfesor,
   actualizarEvaluacionProfesor,
   actualizarCategoriaEvaluacionProfesor,
   iniciarIntentoAleatorio,
+  cancelarIntentoAlumno,
   responderEvaluacionAuto,
   verIntentosProfesor,
   verDetalleIntento

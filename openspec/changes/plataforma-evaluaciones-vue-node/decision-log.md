@@ -57,6 +57,30 @@
 - Se registra que las URLs de API estan fijadas a `localhost:3000` y CORS solo permite origins locales; la configuracion de despliegue queda fuera del trabajo inmediato.
 - Se identifican `start1`, `nodemon` y el directorio vacio `frontend/src/components/` como candidatos de limpieza no bloqueantes; no se eliminan por si forman parte de comandos/estructura que el equipo use.
 - Se decide sustituir `courseOfferings.js` por persistencia normalizada de curso/oferta/clase/matricula. No se precargan sus horarios, cupos ni inscriptos ficticios; nuevas invitaciones usaran IDs de ofertas y los codigos de invitacion existentes por `cursos_json` conservaran compatibilidad.
+- Se implementa el catalogo persistente en `Curso`, `OfertaCurso`, `Clase` y `MatriculaOferta`; admin crea ofertas, profesor consume el mismo catalogo, alumno ve solo sus ofertas matriculadas y las invitaciones nuevas matriculan ofertas de forma atomica. La base local responde con catalogo vacio y no se sembraron datos de ejemplo.
+- Se valida por GET que admin/profesor reciban `total: 0` cuando no hay ofertas y que una cuenta de alumno inexistente sea rechazada. La prueba manual de alta real, cupo e invitacion queda pendiente en la tarea 13.6.
+
+## 2026-10-20
+
+- Se decide cancelar y no reanudar el intento si el alumno cambia de seccion, oculta la pestana o abandona la pagina. El estado queda persistido como `cancelado`; solo un envio exitoso lo marca `completado`, y los estados no completados no cuentan para el promedio.
+- Se implementan la migracion de estado, el endpoint de cancelacion con comprobacion de propiedad, el bloqueo de reenvio y la actualizacion del historial/interfaz. La verificacion manual en base de pruebas y navegador queda pendiente en la tarea 14.4.
+
+## 2026-10-22
+
+- Se corrige la presentacion de los avisos de cancelacion y error para que permanezcan visibles aunque el alumno este desplazado en la pagina.
+- Se elimina la tarjeta independiente del ultimo intento para evitar duplicar el resultado del historial. La lista permanente inferior se reemplaza por el boton flotante `Mis intentos`, que abre un dialogo con los intentos de la categoria actual.
+- La revision del navegador no pudo completar la comprobacion: la vista se restablecio al Dashboard y se observo un `404` de API. La verificacion visual y del flujo real sigue pendiente en la tarea 14.4.
+
+## 2026-10-23
+
+- Se unifican Evaluaciones regulares y Examenes finales en una entrada de navegacion con selector interno, conservando listados, promedios e intentos de cada categoria.
+- Material del curso y Horarios pasan a subsecciones dentro de Cursos. Se agrega Tareas como seccion principal conectada a `GET /alumno/tareas` para listar tareas publicadas de cursos inscritos.
+- El build de frontend pasa; la comprobacion manual de navegacion y responsividad queda pendiente en la tarea 15.4.
+
+## 2026-10-29
+
+- Se registra como deuda tecnica que `index.js` mezcla el registro de rutas con una migracion de esquema extensa y sentencias DDL que se solapan con `backend/db/schema.sql`.
+- A futuro se reemplazara la migracion inline por migraciones versionadas, se conciliara el esquema snapshot para evitar duplicados y se ordenara el arranque para que la API escuche solo despues de migraciones exitosas. Las tareas 16.1 y 16.2 quedan pendientes; no se cambia ahora el comportamiento del backend.
 
 ## Regla de mantenimiento
 

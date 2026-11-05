@@ -112,7 +112,7 @@ const listarTareasAlumno = async ({ usuario, curso = null }) => {
     const [rows] = await connection.query(
       `SELECT id, titulo, descripcion, curso, profesor_usuario, fecha_vencimiento, creada_en
        FROM Tarea
-       WHERE curso IN (${inCursos})
+      WHERE curso IN (${inCursos}) AND publicada = 1
        ORDER BY id DESC`,
       cursosObjetivo
     );
@@ -130,7 +130,7 @@ const listarIntentosAlumno = async (usuario) => {
     if (!alumnoId) return [];
 
     const [rows] = await connection.query(
-      `SELECT i.id, i.evaluacion_id, i.nota_total, i.created_at, e.titulo, e.curso, e.categoria,
+      `SELECT i.id, i.evaluacion_id, i.nota_total, i.created_at, i.estado, e.titulo, e.curso, e.categoria,
               (SELECT SUM(p.puntos)
                FROM IntentoPregunta ip
                JOIN Pregunta p ON p.id = ip.pregunta_id
@@ -147,10 +147,12 @@ const listarIntentosAlumno = async (usuario) => {
       const puntajeMaximo = Number(row.puntaje_maximo || 0);
       const totalPreguntas = Number(row.total_preguntas || 0);
       const respuestasRegistradas = Number(row.respuestas_registradas || 0);
-      const completado = totalPreguntas > 0 && respuestasRegistradas === totalPreguntas;
+      const estado = row.estado || (totalPreguntas > 0 && respuestasRegistradas === totalPreguntas ? 'completado' : 'cancelado');
+      const completado = estado === 'completado';
 
       return {
         ...row,
+        estado,
         completado,
         nota_sobre_10: completado && puntajeMaximo > 0
           ? Math.round((Number(row.nota_total) / puntajeMaximo) * 1000) / 100

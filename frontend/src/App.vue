@@ -148,6 +148,8 @@ const mensajeImportacionExcel = ref('');
 const estadoImportacionExcel = ref('info');
 const evaluacionesProfesor = ref([]);
 const cargandoEvaluacionesProfesor = ref(false);
+const tareasProfesor = ref([]);
+const cargandoTareasProfesor = ref(false);
 const ofertasProfesor = ref([]);
 const cargandoOfertasProfesor = ref(false);
 const evaluacionEnEdicionId = ref(null);
@@ -206,6 +208,74 @@ const cargarEvaluacionesProfesor = async () => {
     error.value = e.message;
   } finally {
     cargandoEvaluacionesProfesor.value = false;
+  }
+};
+
+const cargarTareasProfesor = async () => {
+  cargandoTareasProfesor.value = true;
+
+  try {
+    const response = await fetch('http://localhost:3000/profesor/tareas', {
+      headers: {
+        'x-user-role': 'profesor',
+        'x-user-name': session.user?.usuario || 'profesor-demo'
+      }
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'No se pudieron cargar las tareas');
+    tareasProfesor.value = data.data || [];
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    cargandoTareasProfesor.value = false;
+  }
+};
+
+const actualizarPublicacionProfesor = async ({ tipo, id, publicada }) => {
+  limpiarMensajes();
+  const recurso = tipo === 'tarea' ? 'tareas' : 'evaluaciones';
+
+  try {
+    const response = await fetch(`http://localhost:3000/profesor/${recurso}/${id}/publicacion`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-role': 'profesor',
+        'x-user-name': session.user?.usuario || 'profesor-demo'
+      },
+      body: JSON.stringify({ publicada })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'No se pudo cambiar la publicación');
+    okMessage.value = data.message;
+    if (tipo === 'tarea') await cargarTareasProfesor();
+    else await cargarEvaluacionesProfesor();
+  } catch (e) {
+    error.value = e.message;
+  }
+};
+
+const eliminarRecursoProfesor = async ({ tipo, id }) => {
+  const nombre = tipo === 'tarea' ? 'esta tarea' : 'esta evaluación';
+  if (!window.confirm(`¿Eliminar ${nombre}? Esta acción no se puede deshacer.`)) return;
+
+  limpiarMensajes();
+  const recurso = tipo === 'tarea' ? 'tareas' : 'evaluaciones';
+  try {
+    const response = await fetch(`http://localhost:3000/profesor/${recurso}/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'x-user-role': 'profesor',
+        'x-user-name': session.user?.usuario || 'profesor-demo'
+      }
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `No se pudo eliminar ${nombre}`);
+    okMessage.value = data.message;
+    if (tipo === 'tarea') await cargarTareasProfesor();
+    else await cargarEvaluacionesProfesor();
+  } catch (e) {
+    error.value = e.message;
   }
 };
 
@@ -386,7 +456,8 @@ const crearTareaProfesor = async () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-role': 'profesor'
+        'x-user-role': 'profesor',
+        'x-user-name': session.user?.usuario || 'profesor-demo'
       },
       body: JSON.stringify({
         titulo: tareaForm.titulo,
@@ -402,7 +473,8 @@ const crearTareaProfesor = async () => {
       throw new Error(data.message || data.error || 'No se pudo crear la tarea');
     }
 
-    okMessage.value = 'Tarea creada correctamente';
+    okMessage.value = 'Tarea guardada como borrador. Publícala cuando esté lista.';
+    await cargarTareasProfesor();
     tareaForm.titulo = '';
     tareaForm.descripcion = '';
     tareaForm.fechaVencimiento = '';
@@ -546,6 +618,8 @@ const crearTareaProfesor = async () => {
           :estado-importacion-excel="estadoImportacionExcel"
           :evaluaciones-profesor="evaluacionesProfesor"
           :cargando-evaluaciones-profesor="cargandoEvaluacionesProfesor"
+          :tareas-profesor="tareasProfesor"
+          :cargando-tareas-profesor="cargandoTareasProfesor"
           :evaluacion-en-edicion-id="evaluacionEnEdicionId"
           :guardando-evaluacion="guardandoEvaluacion"
           :evaluaciones-guardadas="evaluacionesGuardadas"
@@ -554,6 +628,9 @@ const crearTareaProfesor = async () => {
           @importar-evaluacion-excel="importarEvaluacionExcelProfesor"
           @limpiar-importacion-excel="limpiarEstadoImportacionExcel"
           @cargar-evaluaciones="cargarEvaluacionesProfesor"
+          @cargar-tareas="cargarTareasProfesor"
+          @actualizar-publicacion="actualizarPublicacionProfesor"
+          @eliminar-recurso="eliminarRecursoProfesor"
           @cargar-ofertas="cargarOfertasProfesor"
           @editar-evaluacion="editarEvaluacionProfesor"
                     @actualizar-categoria-evaluacion="actualizarCategoriaEvaluacion"

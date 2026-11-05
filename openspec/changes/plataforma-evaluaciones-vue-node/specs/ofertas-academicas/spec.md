@@ -16,7 +16,7 @@ El sistema MUST almacenar los cursos academicos y sus ofertas/turnos en MySQL, i
 - **THEN** las vistas muestran un estado vacio y permiten al administrador crear la primera oferta
 
 ### Requirement: Clases asociadas a una oferta
-El sistema MUST persistir las clases incluidas en una oferta con materia, nombre/seccion, modalidad semanal o por entregas, horario opcional y codigo de curso legacy opcional.
+El sistema MUST persistir las clases incluidas en una oferta con materia, nombre/seccion, modalidad semanal o por entregas, horario opcional y codigo de curso legacy requerido para las consultas actuales de tareas/evaluaciones.
 
 #### Scenario: Crear oferta con clases
 - **WHEN** un administrador crea una oferta con datos validos y al menos una clase

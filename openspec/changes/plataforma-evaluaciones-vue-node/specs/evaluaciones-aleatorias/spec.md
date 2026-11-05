@@ -75,11 +75,11 @@ El sistema MUST permitir clasificar cada evaluacion como evaluacion regular o ex
 El sistema MUST presentar al alumno las evaluaciones regulares y los examenes finales en vistas diferenciadas, y permitir realizar intentos en cualquiera de las dos categorias.
 
 #### Scenario: Alumno abre evaluaciones regulares
-- **WHEN** el alumno selecciona Evaluaciones
+- **WHEN** el alumno selecciona la categoria Evaluaciones regulares dentro de Evaluaciones
 - **THEN** el sistema lista unicamente evaluaciones regulares de sus cursos y permite iniciar y enviar un intento
 
 #### Scenario: Alumno abre examenes finales
-- **WHEN** el alumno selecciona Examenes finales
+- **WHEN** el alumno selecciona la categoria Examenes finales dentro de Evaluaciones
 - **THEN** el sistema lista unicamente examenes finales de sus cursos y permite iniciar y enviar un intento
 
 ### Requirement: Edicion segura de evaluaciones
@@ -99,3 +99,30 @@ El sistema MUST persistir el conjunto exacto de preguntas seleccionadas para cad
 #### Scenario: Consulta posterior de intento
 - **WHEN** un profesor consulta el detalle de un intento ya generado
 - **THEN** el sistema muestra las preguntas exactas asignadas en ese intento y conserva su orden
+
+### Requirement: Ciclo de vida y cancelacion de intentos
+El sistema MUST persistir cada intento como `en_progreso`, `completado` o `cancelado`; un intento activo se cancela cuando el alumno cambia de seccion, oculta la pestana o abandona la pagina, y un intento cancelado no puede recibir respuestas ni generar calificacion.
+
+#### Scenario: Alumno abandona un intento activo
+- **WHEN** el alumno cambia a otra seccion, cambia de pestana o minimiza/cierra la pagina durante un intento
+- **THEN** el sistema marca el intento como cancelado y no permite reanudarlo ni enviarlo
+
+#### Scenario: Envio exitoso de respuestas
+- **WHEN** el alumno envia las respuestas de un intento activo correctamente
+- **THEN** el sistema guarda la calificacion y cambia el estado del intento a completado
+
+#### Scenario: Intento cancelado o completado
+- **WHEN** el alumno intenta cancelar un intento que ya no esta en progreso o enviar respuestas de un intento cancelado/completado
+- **THEN** el sistema rechaza la operacion y conserva el estado y resultado existentes
+
+#### Scenario: Consulta del historial
+- **WHEN** el alumno consulta su historial
+- **THEN** el sistema distingue intentos en progreso, cancelados y completados, y excluye los no completados del promedio
+
+#### Scenario: Abrir historial desde evaluaciones
+- **WHEN** el alumno selecciona el boton flotante de intentos
+- **THEN** el sistema muestra el historial de la categoria actual en un dialogo, sin mantener una lista permanente al final de la pagina
+
+#### Scenario: Confirmacion visible al cancelar
+- **WHEN** la cancelacion de un intento termina correctamente al cambiar de seccion
+- **THEN** el sistema muestra una confirmacion visible sin depender de que el alumno vuelva al inicio de la pagina

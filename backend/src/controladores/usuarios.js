@@ -1,10 +1,5 @@
 import { conexion } from '../db.js';
 
-/**
- * Crear Usuario
- * @param {Object} req - La solicitud HTTP
- * @param {Object} res - La respuesta HTTP
- */
 
 const crearUsuario = async (datos) => {
     const { nombre, apellido, email, usuario, contrasena, tipo, curso, cursos } = datos;

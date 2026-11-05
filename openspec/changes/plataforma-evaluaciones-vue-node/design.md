@@ -80,7 +80,7 @@ Ver motivacion en proposal.md (seccion Why). El proyecto inicia sin implementaci
 
 ### 11) Persistencia del catalogo academico
 - Decision: reemplazar `courseOfferings.js` por tablas `Curso`, `OfertaCurso`, `Clase` y `MatriculaOferta`; no importar los conteos de demostracion como matriculas.
-- Decision: una oferta representa curso + turno/horario + cupo; sus clases guardan materia, seccion, modalidad y horario, con `codigo_legacy` nullable para compatibilidad temporal con tareas/evaluaciones que aun usan `curso` string.
+- Decision: una oferta representa curso + turno/horario + cupo; sus clases nuevas guardan materia, seccion, modalidad, horario y un `codigo_legacy` requerido para compatibilidad temporal con tareas/evaluaciones que aun usan `curso` string. La columna se mantiene nullable solo para compatibilidad con posibles filas antiguas.
 - Decision: las invitaciones nuevas apuntan a IDs de ofertas y el canje crea todas las matriculas de forma atomica, valida cupo disponible y agrega los codigos legacy de sus clases a `UsuarioCurso`. Los codigos existentes basados en `cursos_json` siguen siendo aceptados.
 - Decision: al iniciar, la base queda sin cursos/ofertas de ejemplo; el administrador los crea desde la UI. El conteo de inscritos se calcula desde `MatriculaOferta`.
 - Rationale: dar una unica fuente persistente para admin, profesor y matricula sin convertir datos ficticios en registros academicos reales.

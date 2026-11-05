@@ -179,20 +179,15 @@
 
       <section v-if="activeSection === 'dashboard'" class="teacher-grid teacher-grid--bottom">
         <q-card flat bordered class="teacher-section">
-          <q-card-section class="row items-center justify-between q-col-gutter-md">
+          <q-card-section>
             <div>
               <p class="teacher-section__kicker">Alumnos</p>
               <h3>Vista rápida por curso</h3>
             </div>
-            <q-input dense outlined placeholder="Buscar alumno" class="teacher-search">
-              <template #prepend>
-                <q-icon name="search" />
-              </template>
-            </q-input>
           </q-card-section>
 
-          <q-card-section>
-            <q-table flat :rows="visibleStudentRows" :columns="studentColumns" row-key="usuario" hide-bottom dense />
+          <q-card-section class="teacher-empty-state">
+            El roster de alumnos aparecerá cuando se conecte la asignación a ofertas.
           </q-card-section>
         </q-card>
 
@@ -263,6 +258,48 @@
             <q-table flat :rows="visibleTrackingRows" :columns="trackingColumns" row-key="curso" hide-bottom dense />
           </q-card-section>
         </q-card>
+
+        <q-card flat bordered class="teacher-section teacher-task-list">
+          <q-card-section class="row items-center justify-between q-col-gutter-md">
+            <div>
+              <p class="teacher-section__kicker">Gestión</p>
+              <h3>Tareas creadas</h3>
+            </div>
+            <q-btn flat color="primary" icon="refresh" label="Actualizar" :loading="props.cargandoTareasProfesor" @click="emit('cargar-tareas')" />
+          </q-card-section>
+          <q-table
+            flat
+            dense
+            row-key="id"
+            :rows="props.tareasProfesor"
+            :columns="taskColumns"
+            :loading="props.cargandoTareasProfesor"
+            :pagination="{ rowsPerPage: 0 }"
+            hide-pagination
+          >
+            <template #body-cell-publicada="slotProps">
+              <q-td :props="slotProps">{{ slotProps.row.publicada ? 'Publicada' : 'Borrador' }}</q-td>
+            </template>
+            <template #body-cell-acciones="slotProps">
+              <q-td :props="slotProps" class="text-right">
+                <q-btn
+                  flat
+                  dense
+                  :color="slotProps.row.publicada ? 'warning' : 'positive'"
+                  :icon="slotProps.row.publicada ? 'visibility_off' : 'publish'"
+                  :label="slotProps.row.publicada ? 'Retirar' : 'Publicar'"
+                  @click="emit('actualizar-publicacion', { tipo: 'tarea', id: slotProps.row.id, publicada: !slotProps.row.publicada })"
+                />
+                <q-btn flat dense color="negative" icon="delete" label="Eliminar" @click="emit('eliminar-recurso', { tipo: 'tarea', id: slotProps.row.id })" />
+              </q-td>
+            </template>
+            <template #no-data>
+              <div class="full-width row flex-center q-pa-lg text-grey-7">
+                {{ props.cargandoTareasProfesor ? 'Cargando tareas...' : 'Todavía no has creado tareas.' }}
+              </div>
+            </template>
+          </q-table>
+        </q-card>
       </section>
 
       <q-card v-if="activeSection === 'evaluaciones'" flat bordered class="teacher-section">
@@ -305,8 +342,19 @@
               />
             </q-td>
           </template>
+          <template #body-cell-publicada="slotProps">
+            <q-td :props="slotProps">{{ slotProps.row.publicada ? 'Publicada' : 'Borrador' }}</q-td>
+          </template>
           <template #body-cell-acciones="slotProps">
             <q-td :props="slotProps" class="text-right">
+              <q-btn
+                flat
+                dense
+                :color="slotProps.row.publicada ? 'warning' : 'positive'"
+                :icon="slotProps.row.publicada ? 'visibility_off' : 'publish'"
+                :label="slotProps.row.publicada ? 'Retirar' : 'Publicar'"
+                @click="emit('actualizar-publicacion', { tipo: 'evaluacion', id: slotProps.row.id, publicada: !slotProps.row.publicada })"
+              />
               <q-btn
                 flat
                 dense
@@ -317,6 +365,17 @@
                 @click="emit('editar-evaluacion', slotProps.row.id)"
               >
                 <q-tooltip v-if="Number(slotProps.row.intentos) > 0">No se puede editar porque ya tiene intentos</q-tooltip>
+              </q-btn>
+              <q-btn
+                flat
+                dense
+                color="negative"
+                icon="delete"
+                label="Eliminar"
+                :disable="Number(slotProps.row.intentos) > 0"
+                @click="emit('eliminar-recurso', { tipo: 'evaluacion', id: slotProps.row.id })"
+              >
+                <q-tooltip v-if="Number(slotProps.row.intentos) > 0">No se puede eliminar porque ya tiene intentos</q-tooltip>
               </q-btn>
             </q-td>
           </template>
@@ -330,20 +389,15 @@
 
       <section v-if="activeSection === 'alumnos'" class="teacher-grid teacher-grid--bottom">
         <q-card flat bordered class="teacher-section">
-          <q-card-section class="row items-center justify-between q-col-gutter-md">
+          <q-card-section>
             <div>
               <p class="teacher-section__kicker">Alumnos</p>
               <h3>Vista rápida por curso</h3>
             </div>
-            <q-input dense outlined placeholder="Buscar alumno" class="teacher-search">
-              <template #prepend>
-                <q-icon name="search" />
-              </template>
-            </q-input>
           </q-card-section>
 
-          <q-card-section>
-            <q-table flat :rows="visibleStudentRows" :columns="studentColumns" row-key="usuario" hide-bottom dense />
+          <q-card-section class="teacher-empty-state">
+            El roster de alumnos aparecerá cuando se conecte la asignación a ofertas.
           </q-card-section>
         </q-card>
 
@@ -406,7 +460,7 @@
         <q-card-actions align="right" class="q-pa-md">
           <q-btn flat color="primary" label="Cancelar" @click="taskDialogOpen = false" />
           <q-btn flat color="primary" label="Limpiar" @click="resetTaskDraft" />
-          <q-btn color="primary" icon="save" label="Guardar tarea" @click="handleCreateTask" />
+          <q-btn color="primary" icon="save" label="Guardar como borrador" @click="handleCreateTask" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -555,7 +609,7 @@
         <q-card-actions align="right" class="q-pa-md">
           <q-btn flat color="primary" label="Cancelar" :disable="props.guardandoEvaluacion" @click="cerrarEditorEvaluacion" />
           <q-btn outline color="primary" icon="add" label="Nueva pregunta" :disable="evalForm.preguntas.length >= 50 || !isCurrentQuestionReady" @click="createAndGoToNextQuestion" />
-          <q-btn color="primary" icon="save" :label="props.evaluacionEnEdicionId ? 'Guardar cambios' : 'Guardar evaluación'" :disable="!canSaveEvaluation || props.guardandoEvaluacion" :loading="props.guardandoEvaluacion" @click="handleCreateEvaluation" />
+          <q-btn color="primary" icon="save" :label="props.evaluacionEnEdicionId ? 'Guardar cambios' : 'Guardar como borrador'" :disable="!canSaveEvaluation || props.guardandoEvaluacion" :loading="props.guardandoEvaluacion" @click="handleCreateEvaluation" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -574,6 +628,8 @@ const props = defineProps({
   cargandoOfertas: { type: Boolean, default: false },
   evalForm: { type: Object, required: true },
   tareaForm: { type: Object, required: true },
+  tareasProfesor: { type: Array, default: () => [] },
+  cargandoTareasProfesor: { type: Boolean, default: false },
   evaluacionesProfesor: { type: Array, default: () => [] },
   cargandoEvaluacionesProfesor: { type: Boolean, default: false },
   evaluacionEnEdicionId: { type: Number, default: null },
@@ -585,7 +641,7 @@ const props = defineProps({
   estadoImportacionExcel: { type: String, default: 'info' }
 })
 
-const emit = defineEmits(['agregar-pregunta', 'crear-evaluacion', 'importar-evaluacion-excel', 'limpiar-importacion-excel', 'cargar-evaluaciones', 'cargar-ofertas', 'editar-evaluacion', 'actualizar-categoria-evaluacion', 'cancelar-edicion-evaluacion', 'crear-tarea', 'logout'])
+const emit = defineEmits(['agregar-pregunta', 'crear-evaluacion', 'importar-evaluacion-excel', 'limpiar-importacion-excel', 'cargar-evaluaciones', 'cargar-tareas', 'cargar-ofertas', 'editar-evaluacion', 'actualizar-categoria-evaluacion', 'actualizar-publicacion', 'eliminar-recurso', 'cancelar-edicion-evaluacion', 'crear-tarea', 'logout'])
 
 const taskDialogOpen = ref(false)
 const evaluationDialogOpen = ref(false)
@@ -622,6 +678,15 @@ const evaluationColumns = [
   { name: 'created_at', label: 'Fecha de creación', field: 'created_at', align: 'left', sortable: true },
   { name: 'fecha_fin', label: 'Fecha de fin', field: 'fecha_fin', align: 'left', sortable: true },
   { name: 'intentos', label: 'Intentos', field: 'intentos', align: 'right', sortable: true },
+  { name: 'publicada', label: 'Estado', field: 'publicada', align: 'left' },
+  { name: 'acciones', label: '', field: 'id', align: 'right' }
+]
+
+const taskColumns = [
+  { name: 'titulo', label: 'Tarea', field: 'titulo', align: 'left', sortable: true },
+  { name: 'curso', label: 'Clase', field: 'curso', align: 'left', sortable: true },
+  { name: 'fecha_vencimiento', label: 'Entrega', field: 'fecha_vencimiento', align: 'left' },
+  { name: 'publicada', label: 'Estado', field: 'publicada', align: 'left' },
   { name: 'acciones', label: '', field: 'id', align: 'right' }
 ]
 
@@ -701,6 +766,7 @@ const currentSectionMeta = computed(() => sectionMeta[activeSection.value])
 
 watch(activeSection, (section) => {
   if (section === 'evaluaciones') emit('cargar-evaluaciones')
+  if (section === 'tareas') emit('cargar-tareas')
   if (section === 'dashboard' || section === 'cursos') emit('cargar-ofertas')
 })
 
@@ -807,28 +873,10 @@ const trackingRows = computed(() => [
   }
 ])
 
-const studentColumns = [
-  { name: 'usuario', label: 'Alumno', field: 'usuario', align: 'left' },
-  { name: 'clase', label: 'Clase', field: 'clase', align: 'left' },
-  { name: 'promedio', label: 'Promedio', field: 'promedio', align: 'left' },
-  { name: 'entregas', label: 'Entregas', field: 'entregas', align: 'left' }
-]
-
-const studentRows = [
-  { usuario: 'nombre/usuario', offeringId: 'redes-software-tarde', clase: '1A Frontend', promedio: '8.5', entregas: 24 },
-  { usuario: 'prof.garcia', offeringId: 'redes-software-tarde', clase: '1A Redes', promedio: '8.5', entregas: 13 },
-  { usuario: 'prof.garcia', offeringId: 'redes-software-manana', clase: '1B Software', promedio: '9.1', entregas: 18 }
-]
-
 const visibleTrackingRows = computed(() => {
   return trackingRows.value
     .filter((row) => selectedCourse.value === 'todos' || classOptions.value.find((option) => option.value === row.clase)?.offeringId === selectedCourse.value || row.clase === 'general')
     .map((row) => ({ ...row, clase: row.claseLabel }))
-})
-
-const visibleStudentRows = computed(() => {
-  return studentRows
-    .filter((row) => selectedCourse.value === 'todos' || row.offeringId === selectedCourse.value)
 })
 
 const publicationStatus = computed(() => [
@@ -1455,10 +1503,6 @@ const handleExcelFileUpdate = () => {
   flex-wrap: wrap;
 }
 
-.teacher-search {
-  min-width: 220px;
-}
-
 .teacher-results-stack {
   display: grid;
   gap: 12px;
@@ -1547,11 +1591,6 @@ const handleExcelFileUpdate = () => {
 
   .teacher-hero__actions,
   .teacher-actions-inline {
-    width: 100%;
-  }
-
-  .teacher-search {
-    min-width: 0;
     width: 100%;
   }
 

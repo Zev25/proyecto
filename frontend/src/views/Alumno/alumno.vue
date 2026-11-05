@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 
 const props = defineProps({
   user: { type: Object, required: true }
@@ -11,35 +11,43 @@ const studentNavItems = [
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'cursos', label: 'Cursos' },
   { key: 'grupos', label: 'Grupos' },
+  { key: 'tareas', label: 'Tareas' },
   { key: 'evaluaciones', label: 'Evaluaciones' },
-  { key: 'examenes', label: 'Exámenes finales' },
-  { key: 'material', label: 'Material del curso' },
-  { key: 'horarios', label: 'Horarios' }
 ];
 
 const ofertasAlumno = ref([]);
 const cargandoOfertas = ref(false);
 
 const selectedStudentSection = ref('dashboard');
+const categoriaEvaluacionActiva = ref('evaluacion');
+const seccionCursosActiva = ref('ofertas');
 const evaluacionesReales = ref([]);
+const tareasAlumno = ref([]);
 const intentosReales = ref([]);
 const intentoActivo = ref(null);
 const respuestasIntento = reactive({});
 const evaluacionIntentoActivo = ref(null);
 const evaluacionIniciandoId = ref(null);
 const cargandoEvaluaciones = ref(false);
+const cargandoTareas = ref(false);
 const cargandoIntentos = ref(false);
 const enviandoIntento = ref(false);
-const resultadoIntento = ref(null);
+const cancelandoIntento = ref(false);
+const historialIntentosAbierto = ref(false);
 const error = ref('');
 const okMessage = ref('');
 const codigoInvitacion = ref('');
 const canjeandoInvitacion = ref(false);
 const mensajeInvitacion = ref('');
 const errorInvitacion = ref('');
-const categoriaAlumno = computed(() => selectedStudentSection.value === 'examenes' ? 'examen_final' : 'evaluacion');
+let cancelacionIntentoEnCurso = null;
+const categoriaAlumno = computed(() => categoriaEvaluacionActiva.value);
+const seccionAlumnoLabel = computed(() => studentNavItems.find((item) => item.key === selectedStudentSection.value)?.label || 'Perfil');
 const evaluacionesPorCategoria = computed(() => evaluacionesReales.value.filter((evaluacion) => evaluacion.categoria === categoriaAlumno.value));
 const intentosPorCategoria = computed(() => intentosReales.value.filter((intento) => intento.categoria === categoriaAlumno.value));
+const intentoActivoEnCategoria = computed(() => intentoActivo.value
+  && (evaluacionIntentoActivo.value?.categoria || 'evaluacion') === categoriaAlumno.value);
+const intentoActivoEnOtraCategoria = computed(() => intentoActivo.value && !intentoActivoEnCategoria.value);
 const intentosCompletados = computed(() => intentosReales.value.filter((intento) => intento.completado && intento.nota_sobre_10 !== null));
 const promedioCategoria = computed(() => {
   const notas = intentosPorCategoria.value
@@ -111,12 +119,85 @@ const canjearInvitacion = async () => {
 };
 
 const seleccionarSeccionAlumno = async (seccion) => {
+  if (seccion !== selectedStudentSection.value && !(await cancelarIntentoActivo())) return;
   selectedStudentSection.value = seccion;
 
   if (seccion === 'cursos') await cargarOfertasAlumno();
-  if (seccion === 'evaluaciones' || seccion === 'examenes') {
+  if (seccion === 'evaluaciones') {
     await Promise.all([cargarEvaluacionesReales(), cargarIntentosReales()]);
   }
+  if (seccion === 'tareas') await cargarTareasAlumno();
+};
+
+const seleccionarCategoriaEvaluacion = async (categoria) => {
+  if (categoria === categoriaEvaluacionActiva.value || !(await cancelarIntentoActivo())) return;
+  categoriaEvaluacionActiva.value = categoria;
+};
+
+const seleccionarSubseccionCurso = (seccion) => {
+  seccionCursosActiva.value = seccion;
+};
+
+const cancelarIntentoActivo = async ({ keepalive = false, recargarHistorial = true } = {}) => {
+  if (!intentoActivo.value) return true;
+  if (enviandoIntento.value) {
+    error.value = 'Espera a que termine el envío antes de salir de la evaluación.';
+    return false;
+  }
+  if (cancelacionIntentoEnCurso) return cancelacionIntentoEnCurso;
+
+  const intentoId = intentoActivo.value.intentoId;
+  const evaluacion = evaluacionIntentoActivo.value;
+  cancelandoIntento.value = true;
+  cancelacionIntentoEnCurso = (async () => {
+    try {
+      const response = await fetch(`http://localhost:3000/alumno/intentos/${intentoId}/cancelar`, {
+        method: 'POST',
+        headers: { 'x-user-role': 'alumno', 'x-user-name': props.user.usuario },
+        keepalive
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'No se pudo cancelar el intento. Comprueba la conexión con el servidor.');
+
+      const intentoEnHistorial = intentosReales.value.find((intento) => intento.id === intentoId);
+      if (intentoEnHistorial) {
+        intentoEnHistorial.estado = 'cancelado';
+        intentoEnHistorial.completado = false;
+        intentoEnHistorial.nota_sobre_10 = null;
+      } else {
+        intentosReales.value.unshift({
+          id: intentoId,
+          evaluacion_id: evaluacion.id,
+          titulo: evaluacion.titulo,
+          curso: evaluacion.curso,
+          categoria: evaluacion.categoria || 'evaluacion',
+          created_at: new Date().toISOString(),
+          estado: 'cancelado',
+          completado: false,
+          nota_sobre_10: null
+        });
+      }
+      intentoActivo.value = null;
+      evaluacionIntentoActivo.value = null;
+      for (const key of Object.keys(respuestasIntento)) delete respuestasIntento[key];
+      okMessage.value = 'El intento se canceló y no se guardará una calificación.';
+      if (recargarHistorial) await cargarIntentosReales();
+      return true;
+    } catch (requestError) {
+      error.value = requestError.message;
+      return false;
+    } finally {
+      cancelandoIntento.value = false;
+      cancelacionIntentoEnCurso = null;
+    }
+  })();
+
+  return cancelacionIntentoEnCurso;
+};
+
+const cerrarSesionAlumno = async () => {
+  if (!(await cancelarIntentoActivo())) return;
+  emit('logout');
 };
 
 const actualizarDatosExamenesAlumno = async () => {
@@ -158,6 +239,23 @@ const cargarIntentosReales = async () => {
   }
 };
 
+const cargarTareasAlumno = async () => {
+  cargandoTareas.value = true;
+
+  try {
+    const response = await fetch(`http://localhost:3000/alumno/tareas?usuario=${encodeURIComponent(props.user.usuario)}`, {
+      headers: { 'x-user-role': 'alumno', 'x-user-name': props.user.usuario }
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'No se pudieron cargar tus tareas');
+    tareasAlumno.value = data.data || [];
+  } catch (requestError) {
+    error.value = requestError.message;
+  } finally {
+    cargandoTareas.value = false;
+  }
+};
+
 const iniciarIntentoAlumno = async (evaluacion) => {
   limpiarMensajes();
   evaluacionIniciandoId.value = evaluacion.id;
@@ -172,7 +270,6 @@ const iniciarIntentoAlumno = async (evaluacion) => {
 
     intentoActivo.value = data.data;
     evaluacionIntentoActivo.value = evaluacion;
-    resultadoIntento.value = null;
     for (const key of Object.keys(respuestasIntento)) delete respuestasIntento[key];
     for (const pregunta of data.data.preguntas) respuestasIntento[pregunta.id] = '';
   } catch (requestError) {
@@ -183,7 +280,7 @@ const iniciarIntentoAlumno = async (evaluacion) => {
 };
 
 const enviarIntentoAlumno = async () => {
-  if (!intentoActivo.value || !evaluacionIntentoActivo.value) return;
+  if (!intentoActivo.value || !evaluacionIntentoActivo.value || cancelandoIntento.value) return;
   limpiarMensajes();
   enviandoIntento.value = true;
 
@@ -205,11 +302,6 @@ const enviarIntentoAlumno = async () => {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'No se pudo enviar el intento');
 
-    resultadoIntento.value = {
-      evaluacion: evaluacionIntentoActivo.value.titulo,
-      nota: data.notaSobreDiez,
-      intentoId: data.intentoId
-    };
     intentoActivo.value = null;
     evaluacionIntentoActivo.value = null;
     okMessage.value = `Evaluación enviada. Nota obtenida: ${Number(data.notaSobreDiez).toFixed(2)} / 10`;
@@ -221,8 +313,26 @@ const enviarIntentoAlumno = async () => {
   }
 };
 
+const manejarCambioVisibilidad = () => {
+  if (document.visibilityState === 'hidden') {
+    void cancelarIntentoActivo({ keepalive: true, recargarHistorial: false });
+  }
+};
+
+const manejarSalidaPagina = () => {
+  void cancelarIntentoActivo({ keepalive: true, recargarHistorial: false });
+};
+
 onMounted(() => {
+  document.addEventListener('visibilitychange', manejarCambioVisibilidad);
+  window.addEventListener('pagehide', manejarSalidaPagina);
   Promise.all([cargarOfertasAlumno(), cargarEvaluacionesReales(), cargarIntentosReales()]);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', manejarCambioVisibilidad);
+  window.removeEventListener('pagehide', manejarSalidaPagina);
+  void cancelarIntentoActivo({ keepalive: true, recargarHistorial: false });
 });
 </script>
 
@@ -237,10 +347,10 @@ onMounted(() => {
             aria-label="Abrir perfil"
             title="Perfil"
             :class="{ 'student-topbar__brand--active': selectedStudentSection === 'perfil' }"
-            @click="selectedStudentSection = 'perfil'"
+            @click="seleccionarSeccionAlumno('perfil')"
           >A</button>
           <div>
-            <small>Dashboard</small>
+            <small>{{ seccionAlumnoLabel }}</small>
             <strong>{{ props.user.nombre }}</strong>
           </div>
         </div>
@@ -260,8 +370,8 @@ onMounted(() => {
       </header>
 
       <main class="student-main">
-        <section v-if="error" class="alert error" role="alert">{{ error }}</section>
-        <section v-if="okMessage" class="alert success" role="status">{{ okMessage }}</section>
+        <section v-if="error" class="alert error student-feedback" role="alert">{{ error }}</section>
+        <section v-if="okMessage" class="alert success student-feedback" role="status">{{ okMessage }}</section>
 
         <section v-if="selectedStudentSection === 'perfil'" class="student-panel student-profile">
           <header class="student-profile__heading">
@@ -312,7 +422,7 @@ onMounted(() => {
                 <h3>Cerrar sesión</h3>
                 <p>Sal de tu cuenta en este dispositivo.</p>
               </div>
-              <button type="button" class="student-profile__logout-button" @click="emit('logout')">Cerrar sesión</button>
+              <button type="button" class="student-profile__logout-button" @click="cerrarSesionAlumno">Cerrar sesión</button>
             </article>
           </section>
         </section>
@@ -362,10 +472,17 @@ onMounted(() => {
 
         <section v-else-if="selectedStudentSection === 'cursos'" class="student-panel">
           <header class="student-offers-heading">
-            <div><p class="eyebrow">Matrícula</p><h2>Cursos y clases</h2></div>
+            <div><p class="eyebrow">Cursos</p><h2>{{ seccionCursosActiva === 'ofertas' ? 'Cursos y clases' : seccionCursosActiva === 'material' ? 'Material del curso' : 'Horarios' }}</h2></div>
             <button type="button" class="student-profile__action" :disabled="cargandoOfertas" @click="cargarOfertasAlumno">{{ cargandoOfertas ? 'Actualizando...' : 'Actualizar' }}</button>
           </header>
 
+          <nav class="student-subnav" aria-label="Secciones de cursos">
+            <button type="button" :class="{ 'student-subnav__item--active': seccionCursosActiva === 'ofertas' }" :aria-pressed="seccionCursosActiva === 'ofertas'" @click="seleccionarSubseccionCurso('ofertas')">Mis cursos</button>
+            <button type="button" :class="{ 'student-subnav__item--active': seccionCursosActiva === 'material' }" :aria-pressed="seccionCursosActiva === 'material'" @click="seleccionarSubseccionCurso('material')">Material</button>
+            <button type="button" :class="{ 'student-subnav__item--active': seccionCursosActiva === 'horarios' }" :aria-pressed="seccionCursosActiva === 'horarios'" @click="seleccionarSubseccionCurso('horarios')">Horarios</button>
+          </nav>
+
+          <div v-if="seccionCursosActiva === 'ofertas'">
           <section class="student-offer-grid" aria-label="Ofertas matriculadas">
             <div v-if="cargandoOfertas" class="card student-empty-state">Cargando tus ofertas...</div>
             <div v-else-if="ofertasAlumno.length" class="student-offer-grid__items">
@@ -405,6 +522,23 @@ onMounted(() => {
                 <p v-if="errorInvitacion" class="student-enrollment__message student-enrollment__message--error" role="alert">{{ errorInvitacion }}</p>
               </article>
           </div>
+          </div>
+
+          <section v-else-if="seccionCursosActiva === 'material'" class="student-grid">
+            <article class="card student-card student-card--wide">
+              <p class="student-card__kicker">Material del curso</p>
+              <h3>Sección visual</h3>
+              <p class="empty-state">Aquí se mostrará el temario, documentos y recursos del curso.</p>
+            </article>
+          </section>
+
+          <section v-else class="student-grid">
+            <article class="card student-card student-card--wide">
+              <p class="student-card__kicker">Horarios</p>
+              <h3>Sección visual</h3>
+              <p class="empty-state">Aquí se mostrará el calendario y los horarios del alumno.</p>
+            </article>
+          </section>
         </section>
 
         <section v-else-if="selectedStudentSection === 'grupos'" class="student-grid">
@@ -415,23 +549,45 @@ onMounted(() => {
           </article>
         </section>
 
-        <section v-else-if="['evaluaciones', 'examenes'].includes(selectedStudentSection)" class="student-panel student-exams">
+        <section v-else-if="selectedStudentSection === 'tareas'" class="student-panel student-tasks">
           <header class="student-exams__heading">
-            <div><p class="eyebrow">{{ selectedStudentSection === 'examenes' ? 'Exámenes finales de tus cursos' : 'Evaluaciones de tus cursos' }}</p><h2>{{ selectedStudentSection === 'examenes' ? 'Exámenes finales' : 'Evaluaciones' }}</h2></div>
+            <div><p class="eyebrow">Actividades de tus cursos</p><h2>Tareas</h2></div>
+            <button type="button" class="student-profile__action" :disabled="cargandoTareas" @click="cargarTareasAlumno">{{ cargandoTareas ? 'Actualizando...' : 'Actualizar' }}</button>
+          </header>
+          <div v-if="cargandoTareas" class="card student-empty-state">Cargando tareas...</div>
+          <div v-else-if="tareasAlumno.length" class="student-task-list">
+            <article v-for="tarea in tareasAlumno" :key="tarea.id" class="card student-task-card">
+              <div>
+                <p class="student-card__kicker">{{ tarea.curso || 'Curso' }}</p>
+                <h3>{{ tarea.titulo }}</h3>
+                <p v-if="tarea.descripcion">{{ tarea.descripcion }}</p>
+              </div>
+              <footer>
+                <span>{{ tarea.profesor_usuario ? `Docente: ${tarea.profesor_usuario}` : 'Tarea del curso' }}</span>
+                <span>{{ tarea.fecha_vencimiento ? `Vence: ${new Date(tarea.fecha_vencimiento).toLocaleDateString()}` : 'Sin fecha de vencimiento' }}</span>
+              </footer>
+            </article>
+          </div>
+          <div v-else class="card student-empty-state">No hay tareas publicadas para tus cursos.</div>
+        </section>
+
+        <section v-else-if="selectedStudentSection === 'evaluaciones'" class="student-panel student-exams">
+          <header class="student-exams__heading">
+            <div><p class="eyebrow">Evaluaciones de tus cursos</p><h2>Evaluaciones</h2></div>
             <button type="button" class="student-profile__action" :disabled="cargandoEvaluaciones || cargandoIntentos" @click="actualizarDatosExamenesAlumno">Actualizar</button>
           </header>
 
+          <nav class="student-subnav" aria-label="Tipo de evaluación">
+            <button type="button" :class="{ 'student-subnav__item--active': categoriaEvaluacionActiva === 'evaluacion' }" :aria-pressed="categoriaEvaluacionActiva === 'evaluacion'" @click="seleccionarCategoriaEvaluacion('evaluacion')">Evaluaciones regulares</button>
+            <button type="button" :class="{ 'student-subnav__item--active': categoriaEvaluacionActiva === 'examen_final' }" :aria-pressed="categoriaEvaluacionActiva === 'examen_final'" @click="seleccionarCategoriaEvaluacion('examen_final')">Exámenes finales</button>
+          </nav>
+
           <article class="card student-exam-result student-exam-average">
-            <div><p class="student-card__kicker">Promedio · {{ selectedStudentSection === 'examenes' ? 'Exámenes finales' : 'Evaluaciones' }}</p><small>Se consideran todos los intentos enviados</small></div>
+            <div><p class="student-card__kicker">Promedio · {{ categoriaEvaluacionActiva === 'examen_final' ? 'Exámenes finales' : 'Evaluaciones regulares' }}</p><small>Se consideran todos los intentos enviados</small></div>
             <strong>{{ promedioCategoria === null ? 'Sin calificaciones' : `${promedioCategoria.toFixed(2)} / 10` }}</strong>
           </article>
 
-          <article v-if="resultadoIntento" class="card student-exam-result" role="status">
-            <div><p class="student-card__kicker">Intento registrado</p><h3>{{ resultadoIntento.evaluacion }}</h3><small>Intento #{{ resultadoIntento.intentoId }}</small></div>
-            <strong>{{ resultadoIntento.nota }} puntos</strong>
-          </article>
-
-          <form v-if="intentoActivo" class="student-active-attempt" @submit.prevent="enviarIntentoAlumno">
+          <form v-if="intentoActivoEnCategoria" class="student-active-attempt" @submit.prevent="enviarIntentoAlumno">
             <header class="card student-active-attempt__heading">
               <div><p class="student-card__kicker">Intento aleatorio · {{ intentoActivo.totalPreguntas }} preguntas</p><h3>{{ evaluacionIntentoActivo?.titulo }}</h3><small>{{ evaluacionIntentoActivo?.curso }} · Intento #{{ intentoActivo.intentoId }}</small></div>
             </header>
@@ -447,49 +603,103 @@ onMounted(() => {
               <label v-else class="student-exam-text-answer">Tu respuesta<textarea v-model="respuestasIntento[pregunta.id]" rows="3" /></label>
             </article>
 
-            <footer class="student-active-attempt__actions"><span>La calificación se calcula al enviar.</span><button type="submit" class="student-profile__action" :disabled="enviandoIntento">{{ enviandoIntento ? 'Enviando...' : 'Enviar evaluación' }}</button></footer>
+            <footer class="student-active-attempt__actions"><span>La calificación se calcula al enviar.</span><button type="submit" class="student-profile__action" :disabled="enviandoIntento || cancelandoIntento">{{ cancelandoIntento ? 'Cancelando...' : enviandoIntento ? 'Enviando...' : 'Enviar evaluación' }}</button></footer>
           </form>
+
+          <article v-else-if="intentoActivoEnOtraCategoria" class="card student-empty-state" role="status">
+            Tienes un intento activo de {{ evaluacionIntentoActivo?.categoria === 'examen_final' ? 'examen final' : 'evaluación regular' }}. Vuelve a esa sección para continuarlo antes de iniciar otro.
+          </article>
 
           <section v-else class="student-exam-list">
             <div v-if="cargandoEvaluaciones" class="card student-empty-state">Cargando evaluaciones…</div>
             <div v-else-if="evaluacionesPorCategoria.length" class="student-exam-list__grid">
               <article v-for="evaluacion in evaluacionesPorCategoria" :key="evaluacion.id" class="card student-exam-card">
                 <div><p class="student-card__kicker">{{ evaluacion.curso || 'Evaluación general' }}</p><h3>{{ evaluacion.titulo }}</h3><small>Creada por {{ evaluacion.creado_por }}</small></div>
-                <footer><span>Banco: {{ evaluacion.max_preguntas }} · se sortearán {{ evaluacion.preguntas_por_intento }} preguntas</span><button type="button" class="student-profile__action" :disabled="evaluacionIniciandoId !== null" @click="iniciarIntentoAlumno(evaluacion)">{{ evaluacionIniciandoId === evaluacion.id ? 'Preparando…' : 'Iniciar intento' }}</button></footer>
+                <footer><span>Banco: {{ evaluacion.max_preguntas }} · se sortearán {{ evaluacion.preguntas_por_intento }} preguntas</span><button type="button" class="student-profile__action" :disabled="evaluacionIniciandoId !== null || intentoActivo !== null" @click="iniciarIntentoAlumno(evaluacion)">{{ evaluacionIniciandoId === evaluacion.id ? 'Preparando…' : 'Iniciar intento' }}</button></footer>
               </article>
             </div>
-            <div v-else class="card student-empty-state">No hay {{ selectedStudentSection === 'examenes' ? 'exámenes finales' : 'evaluaciones' }} disponibles para tus cursos.</div>
+            <div v-else class="card student-empty-state">No hay {{ categoriaEvaluacionActiva === 'examen_final' ? 'exámenes finales' : 'evaluaciones' }} disponibles para tus cursos.</div>
           </section>
 
-          <section class="card student-exam-history">
-            <header><div><p class="student-card__kicker">Resultados</p><h3>Mis intentos</h3></div><span v-if="cargandoIntentos">Actualizando…</span></header>
-            <div v-if="intentosPorCategoria.length" class="student-exam-history__list">
-              <article v-for="intento in intentosPorCategoria" :key="intento.id"><div><strong>{{ intento.titulo }}</strong><small>{{ intento.curso || 'Evaluación general' }} · {{ new Date(intento.created_at).toLocaleString() }}</small></div><span>{{ intento.completado ? `${Number(intento.nota_sobre_10).toFixed(2)} / 10` : 'Sin enviar' }}</span></article>
-            </div>
-            <p v-else class="student-empty-state">Aún no tienes intentos registrados.</p>
-          </section>
+          <q-btn
+            class="student-history-trigger"
+            color="primary"
+            icon="history"
+            :label="`Mis intentos (${intentosPorCategoria.length})`"
+            :loading="cargandoIntentos"
+            @click="historialIntentosAbierto = true"
+          />
+
+          <q-dialog v-model="historialIntentosAbierto">
+            <q-card class="student-history-dialog">
+              <q-card-section class="student-history-dialog__header">
+                <div>
+                  <p class="student-card__kicker">Resultados</p>
+                  <h3>Mis intentos</h3>
+                </div>
+                <q-btn flat round dense icon="close" aria-label="Cerrar historial" @click="historialIntentosAbierto = false" />
+              </q-card-section>
+              <q-card-section v-if="intentosPorCategoria.length" class="student-exam-history__list">
+                <article v-for="intento in intentosPorCategoria" :key="intento.id">
+                  <div>
+                    <strong>{{ intento.titulo }}</strong>
+                    <small>{{ intento.curso || 'Evaluación general' }} · {{ new Date(intento.created_at).toLocaleString() }}</small>
+                  </div>
+                  <span>{{ intento.estado === 'cancelado' ? 'Cancelado' : intento.completado ? `${Number(intento.nota_sobre_10).toFixed(2)} / 10` : intento.estado === 'en_progreso' ? 'En progreso' : 'Sin enviar' }}</span>
+                </article>
+              </q-card-section>
+              <p v-else class="student-empty-state">Aún no tienes intentos registrados.</p>
+            </q-card>
+          </q-dialog>
         </section>
 
-        <section v-else-if="selectedStudentSection === 'material'" class="student-grid">
-          <article class="card student-card student-card--wide">
-            <p class="student-card__kicker">Material del curso</p>
-            <h3>Sección visual</h3>
-            <p class="empty-state">Aquí se mostrará el temario, documentos y recursos del curso.</p>
-          </article>
-        </section>
-
-        <section v-else-if="selectedStudentSection === 'horarios'" class="student-grid">
-          <article class="card student-card student-card--wide">
-            <p class="student-card__kicker">Horarios</p>
-            <h3>Sección visual</h3>
-            <p class="empty-state">Aquí se mostrará el calendario y los horarios del alumno.</p>
-          </article>
-        </section>
       </main>
     </section>
   </div>
 </template>
 <style scoped>
+.student-feedback {
+  position: fixed;
+  right: clamp(1rem, 3vw, 2.5rem);
+  bottom: 5.25rem;
+  z-index: 2000;
+  width: min(28rem, calc(100vw - 2rem));
+  margin: 0;
+  box-shadow: 0 8px 24px rgba(24, 43, 34, 0.18);
+}
+
+.student-history-trigger {
+  position: fixed;
+  right: clamp(1rem, 3vw, 2.5rem);
+  bottom: 1rem;
+  z-index: 40;
+  box-shadow: 0 6px 18px rgba(24, 43, 34, 0.2);
+}
+
+.student-history-dialog {
+  width: min(40rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+  border-radius: 4px;
+}
+
+.student-history-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--teacher-line);
+}
+
+.student-history-dialog__header h3 {
+  margin: 0;
+  color: var(--teacher-ink);
+}
+
+.student-history-dialog .student-exam-history__list {
+  max-height: min(60vh, 34rem);
+  overflow-y: auto;
+}
+
 .student-shell {
   width: 100%;
   max-width: none;
@@ -587,6 +797,33 @@ onMounted(() => {
   background: #315d50;
   color: white;
   border-color: #315d50;
+}
+
+.student-subnav {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  gap: 0.25rem;
+  overflow-x: auto;
+  padding: 0.25rem;
+  border: 1px solid #dfe7e1;
+  border-radius: 4px;
+  background: #eaf0ec;
+}
+
+.student-subnav button {
+  flex: 0 0 auto;
+  border-radius: 3px;
+  background: transparent;
+  color: #53645b;
+  padding: 0.55rem 0.8rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.student-subnav button.student-subnav__item--active {
+  background: #315d50;
+  color: white;
 }
 
 .student-profile__heading h2,
@@ -778,6 +1015,43 @@ onMounted(() => {
   min-width: 0;
 }
 
+.student-tasks,
+.student-task-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.student-task-card {
+  display: grid;
+  gap: 1rem;
+  border: 1px solid var(--teacher-line) !important;
+  border-radius: 3px;
+  background: var(--teacher-paper);
+  padding: 1rem;
+}
+
+.student-task-card h3 {
+  margin: 0;
+  color: #263630;
+}
+
+.student-task-card p:not(.student-card__kicker) {
+  margin: 0.5rem 0 0;
+  color: #53615a;
+  white-space: pre-wrap;
+}
+
+.student-task-card footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--teacher-line);
+  color: var(--teacher-muted);
+  font-size: 0.78rem;
+}
+
 .student-exams {
   display: grid;
   gap: 1rem;
@@ -960,7 +1234,37 @@ onMounted(() => {
   font-size: 0.8rem;
 }
 
+@media (max-width: 600px) {
+  .student-feedback {
+    right: 1rem;
+    bottom: 5rem;
+    left: 1rem;
+    width: auto;
+  }
+
+  .student-history-trigger {
+    right: 1rem;
+    bottom: 0.75rem;
+  }
+}
+
 @media (max-width: 900px) {
+  .student-topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .student-topbar__nav {
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 0.15rem;
+  }
+
+  .student-topbar__item {
+    flex: 0 0 auto;
+  }
+
 .student-course-layout {
     grid-template-columns: 1fr;
   }

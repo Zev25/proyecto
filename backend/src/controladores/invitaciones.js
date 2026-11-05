@@ -23,7 +23,8 @@ const obtenerOfertasActivas = async (connection, ofertaIds, bloquear = false) =>
   if (ofertaIds.length === 0) return [];
   const placeholders = ofertaIds.map(() => '?').join(', ');
   const [rows] = await connection.query(
-    `SELECT o.id, o.turno, o.cupo_maximo, c.nombre AS curso
+        `SELECT o.id, o.turno, o.cupo_maximo, c.nombre AS curso,
+          (SELECT COUNT(*) FROM MatriculaOferta m WHERE m.oferta_id = o.id) AS inscritos
      FROM OfertaCurso o
      JOIN Curso c ON c.id = o.curso_id
      WHERE o.id IN (${placeholders}) AND o.activa = 1 AND c.activo = 1
@@ -96,8 +97,11 @@ const crearInvitacionCursoAdmin = async ({ adminUsuario, cursos, ofertaIds, expi
     return { ok: false, code: 'CURSO_INVALIDO' };
   }
 
-  const cupo = Number(cupoMaximo || 1);
-  const cupoSeguro = Number.isInteger(cupo) && cupo > 0 ? cupo : 1;
+  const cupo = Number(cupoMaximo ?? 1);
+  if (!Number.isInteger(cupo) || cupo < 1 || cupo > 1000) {
+    return { ok: false, code: 'CUPO_INVALIDO' };
+  }
+  const cupoSeguro = cupo;
   const expiraEn = calcularExpiracion(expiraEnHoras);
 
   const connection = await conexion.getConnection();
@@ -106,6 +110,18 @@ const crearInvitacionCursoAdmin = async ({ adminUsuario, cursos, ofertaIds, expi
     const ofertas = await obtenerOfertasActivas(connection, ofertaIdsNormalizados);
     if (ofertas.length !== ofertaIdsNormalizados.length) {
       return { ok: false, code: 'OFERTAS_INVALIDAS' };
+    }
+    const ofertaSinCapacidad = ofertas.find((oferta) => (
+      Number(oferta.cupo_maximo) - Number(oferta.inscritos || 0) < cupoSeguro
+    ));
+    if (ofertaSinCapacidad) {
+      return {
+        ok: false,
+        code: 'CUPO_SUPERA_DISPONIBLES',
+        curso: ofertaSinCapacidad.curso,
+        turno: ofertaSinCapacidad.turno,
+        disponibles: Math.max(Number(ofertaSinCapacidad.cupo_maximo) - Number(ofertaSinCapacidad.inscritos || 0), 0)
+      };
     }
 
     for (let intento = 0; intento < 5; intento += 1) {

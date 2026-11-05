@@ -67,6 +67,16 @@ CREATE TABLE IF NOT EXISTS Clase (
   CONSTRAINT fk_clase_oferta FOREIGN KEY (oferta_id) REFERENCES OfertaCurso(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS ClaseProfesor (
+  clase_id INT NOT NULL,
+  profesor_id INT NOT NULL,
+  assigned_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (clase_id),
+  KEY idx_claseprofesor_profesor (profesor_id),
+  CONSTRAINT fk_claseprofesor_clase FOREIGN KEY (clase_id) REFERENCES Clase(id) ON DELETE CASCADE,
+  CONSTRAINT fk_claseprofesor_profesor FOREIGN KEY (profesor_id) REFERENCES Usuario(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS MatriculaOferta (
   id INT NOT NULL AUTO_INCREMENT,
   usuario_id INT NOT NULL,
@@ -86,6 +96,7 @@ CREATE TABLE IF NOT EXISTS Tarea (
   curso VARCHAR(100) NOT NULL,
   profesor_usuario VARCHAR(100) NOT NULL,
   fecha_vencimiento DATE DEFAULT NULL,
+  publicada TINYINT(1) NOT NULL DEFAULT 0,
   creada_en TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -99,6 +110,7 @@ CREATE TABLE IF NOT EXISTS Evaluacion (
   preguntas_por_intento INT NOT NULL DEFAULT 20,
   fecha_fin DATE DEFAULT NULL,
   categoria ENUM('evaluacion', 'examen_final') NOT NULL DEFAULT 'evaluacion',
+  publicada TINYINT(1) NOT NULL DEFAULT 0,
   created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -123,6 +135,7 @@ CREATE TABLE IF NOT EXISTS Intento (
   alumno_id INT DEFAULT NULL,
   alumno_usuario VARCHAR(80) NOT NULL,
   nota_total DECIMAL(6,2) NOT NULL DEFAULT 0.00,
+  estado ENUM('en_progreso', 'completado', 'cancelado') NOT NULL DEFAULT 'cancelado',
   created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_intento_evaluacion (evaluacion_id),

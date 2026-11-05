@@ -1,7 +1,7 @@
-import multer from 'multer';
 import { router } from './config.js';
 import { conexion } from './db.js';
 import { autorizarRoles } from './middleware/autorizarRoles.js';
+import { cargarExcelEvaluacion } from './middleware/multerExcel.js';
 import { parsearPreguntasExcel } from './servicios/evaluacionesExcel.js';
 
 // Controladores de acceso y usuarios
@@ -16,19 +16,24 @@ import {
 
 // Controladores de profesor y alumno
 import {
+  actualizarPublicacionEvaluacion,
   crearEvaluacionConPreguntas,
+  eliminarEvaluacion,
   listarEvaluacionesDisponibles,
   listarEvaluacionesProfesor,
   obtenerEvaluacionProfesor,
   actualizarEvaluacionProfesor,
   actualizarCategoriaEvaluacionProfesor,
   iniciarIntentoAleatorio,
+  cancelarIntentoAlumno,
   responderEvaluacionAuto,
   verIntentosProfesor,
   verDetalleIntento
 } from './controladores/evaluaciones.js';
 import {
+  actualizarPublicacionTarea,
   crearTarea,
+  eliminarTarea,
   listarTareasPorCurso,
   listarTareasPorProfesor
 } from './controladores/tareas.js';
@@ -57,18 +62,7 @@ import {
   canjearInvitacionCursoAlumno,
   crearInvitacionCursoAdmin
 } from './controladores/invitaciones.js';
-import { crearOfertaAcademica, listarOfertasAcademicas, listarOfertasAlumno } from './controladores/ofertas.js';
-
-const cargarExcelEvaluacion = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 4 },
-  fileFilter: (_req, file, callback) => {
-    if (!file.originalname.toLowerCase().endsWith('.xlsx')) {
-      return callback(new Error('Solo se admiten archivos .xlsx'));
-    }
-    return callback(null, true);
-  }
-}).single('archivo');
+import { asignarProfesorAClase, crearOfertaAcademica, listarOfertasAcademicas, listarOfertasAlumno } from './controladores/ofertas.js';
 
 const fechaIsoValida = (fecha) => {
   if (fecha === null || fecha === undefined || fecha === '') return true;
@@ -145,6 +139,24 @@ const asegurarEstadoUsuario = async () => {
 
     if (Number(columnaCategoriaEvaluacion?.[0]?.total || 0) === 0) {
       await conexion.query("ALTER TABLE Evaluacion ADD COLUMN categoria ENUM('evaluacion', 'examen_final') NOT NULL DEFAULT 'evaluacion' AFTER fecha_fin");
+    }
+
+    const [columnaEvaluacionPublicada] = await conexion.query(
+      `SELECT COUNT(*) AS total FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'Evaluacion' AND COLUMN_NAME = 'publicada'`
+    );
+    if (Number(columnaEvaluacionPublicada?.[0]?.total || 0) === 0) {
+      await conexion.query('ALTER TABLE Evaluacion ADD COLUMN publicada TINYINT(1) NOT NULL DEFAULT 0');
+      await conexion.query('UPDATE Evaluacion SET publicada = 1');
+    }
+
+    const [columnaTareaPublicada] = await conexion.query(
+      `SELECT COUNT(*) AS total FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'Tarea' AND COLUMN_NAME = 'publicada'`
+    );
+    if (Number(columnaTareaPublicada?.[0]?.total || 0) === 0) {
+      await conexion.query('ALTER TABLE Tarea ADD COLUMN publicada TINYINT(1) NOT NULL DEFAULT 0');
+      await conexion.query('UPDATE Tarea SET publicada = 1');
     }
 
     const [columnasEmail] = await conexion.query(
@@ -232,57 +244,13 @@ const asegurarEstadoUsuario = async () => {
     );
 
     await conexion.query(
-      `CREATE TABLE IF NOT EXISTS MatriculaOferta (
-        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-        usuario_id INT NOT NULL,
-        oferta_id INT NOT NULL,
-        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY uq_matricula_usuario_oferta (usuario_id, oferta_id),
-        KEY idx_matricula_oferta (oferta_id),
-        CONSTRAINT fk_matricula_usuario FOREIGN KEY (usuario_id) REFERENCES Usuario(id) ON DELETE CASCADE,
-        CONSTRAINT fk_matricula_oferta FOREIGN KEY (oferta_id) REFERENCES OfertaCurso(id) ON DELETE CASCADE
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
-    );
-
-    await conexion.query(
-      `CREATE TABLE IF NOT EXISTS Curso (
-        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-        nombre VARCHAR(100) NOT NULL,
-        activo TINYINT(1) NOT NULL DEFAULT 1,
-        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY uq_curso_nombre (nombre)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
-    );
-
-    await conexion.query(
-      `CREATE TABLE IF NOT EXISTS OfertaCurso (
-        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-        curso_id INT NOT NULL,
-        turno VARCHAR(30) NOT NULL,
-        hora_inicio TIME NOT NULL,
-        hora_fin TIME NOT NULL,
-        cupo_maximo INT NOT NULL,
-        activa TINYINT(1) NOT NULL DEFAULT 1,
-        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY uq_oferta_curso_turno (curso_id, turno),
-        KEY idx_oferta_curso_activa (activa),
-        CONSTRAINT fk_oferta_curso FOREIGN KEY (curso_id) REFERENCES Curso(id) ON DELETE CASCADE
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
-    );
-
-    await conexion.query(
-      `CREATE TABLE IF NOT EXISTS Clase (
-        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-        oferta_id INT NOT NULL,
-        materia VARCHAR(100) NOT NULL,
-        nombre VARCHAR(100) NOT NULL,
-        modalidad ENUM('semanal', 'entregas') NOT NULL DEFAULT 'semanal',
-        horario VARCHAR(150) DEFAULT NULL,
-        codigo_legacy VARCHAR(100) DEFAULT NULL,
-        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY uq_clase_oferta_nombre (oferta_id, nombre),
-        KEY idx_clase_codigo_legacy (codigo_legacy),
-        CONSTRAINT fk_clase_oferta FOREIGN KEY (oferta_id) REFERENCES OfertaCurso(id) ON DELETE CASCADE
+      `CREATE TABLE IF NOT EXISTS ClaseProfesor (
+        clase_id INT NOT NULL PRIMARY KEY,
+        profesor_id INT NOT NULL,
+        assigned_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        KEY idx_claseprofesor_profesor (profesor_id),
+        CONSTRAINT fk_claseprofesor_clase FOREIGN KEY (clase_id) REFERENCES Clase(id) ON DELETE CASCADE,
+        CONSTRAINT fk_claseprofesor_profesor FOREIGN KEY (profesor_id) REFERENCES Usuario(id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
     );
 
@@ -354,6 +322,36 @@ const asegurarEstadoUsuario = async () => {
        JOIN Intento i ON i.id = r.intento_id
        JOIN Pregunta p ON p.id = r.pregunta_id AND p.evaluacion_id = i.evaluacion_id`
     );
+
+    const [columnaEstadoIntento] = await conexion.query(
+      `SELECT COUNT(*) AS total
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'Intento'
+         AND COLUMN_NAME = 'estado'`
+    );
+    if (Number(columnaEstadoIntento?.[0]?.total || 0) === 0) {
+      await conexion.query(
+        "ALTER TABLE Intento ADD COLUMN estado ENUM('en_progreso', 'completado', 'cancelado') NOT NULL DEFAULT 'cancelado' AFTER nota_total"
+      );
+      await conexion.query(
+        `UPDATE Intento i
+         LEFT JOIN (
+           SELECT intento_id, COUNT(*) AS total
+           FROM IntentoPregunta
+           GROUP BY intento_id
+         ) ip ON ip.intento_id = i.id
+         LEFT JOIN (
+           SELECT intento_id, COUNT(*) AS total
+           FROM Respuesta
+           GROUP BY intento_id
+         ) r ON r.intento_id = i.id
+         SET i.estado = CASE
+           WHEN COALESCE(ip.total, 0) > 0 AND r.total = ip.total THEN 'completado'
+           ELSE 'cancelado'
+         END`
+      );
+    }
 
     await conexion.query(
       `CREATE TABLE IF NOT EXISTS InvitacionCurso (
@@ -584,9 +582,32 @@ router.get('/admin/ofertas', autorizarRoles('admin'), async (_req, res) => {
   }
 });
 
-router.get('/profesor/ofertas', autorizarRoles('profesor'), async (_req, res) => {
+router.patch('/admin/clases/:claseId/profesor', autorizarRoles('admin'), async (req, res) => {
   try {
-    const data = await listarOfertasAcademicas();
+    const result = await asignarProfesorAClase({
+      claseId: req.params.claseId,
+      profesorUsuario: req.body?.profesorUsuario ?? null
+    });
+    if (!result.ok) {
+      const errores = {
+        CLASE_INVALIDA: 'La clase indicada no es válida',
+        CLASE_NO_ENCONTRADA: 'No se encontró la clase',
+        PROFESOR_INVALIDO: 'El profesor indicado no es válido',
+        PROFESOR_NO_ENCONTRADO: 'Selecciona un profesor activo'
+      };
+      return res.status(400).json({ ok: false, error: errores[result.code] || 'No se pudo asignar el profesor', code: result.code });
+    }
+    return res.json({ ok: true, message: 'Asignación actualizada' });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No se pudo actualizar la asignación', message: error.message });
+  }
+});
+
+router.get('/profesor/ofertas', autorizarRoles('profesor'), async (req, res) => {
+  try {
+    const profesorUsuario = req.headers['x-user-name'];
+    if (!profesorUsuario) return res.status(400).json({ ok: false, error: 'Falta identificar al profesor' });
+    const data = await listarOfertasAcademicas({ profesorUsuario });
     return res.json({ ok: true, total: data.length, data });
   } catch (error) {
     return res.status(500).json({ ok: false, error: 'No se pudieron listar las ofertas', message: error.message });
@@ -821,6 +842,15 @@ router.post('/admin/invitaciones/cursos', autorizarRoles('admin'), async (req, r
       if (result.code === 'OFERTAS_INVALIDAS') {
         return res.status(400).json({ ok: false, error: 'Una o más ofertas no existen o están inactivas' });
       }
+      if (result.code === 'CUPO_INVALIDO') {
+        return res.status(400).json({ ok: false, error: 'El número de usos debe ser un entero entre 1 y 1000' });
+      }
+      if (result.code === 'CUPO_SUPERA_DISPONIBLES') {
+        return res.status(409).json({
+          ok: false,
+          error: `La oferta ${result.curso} · ${result.turno} solo tiene ${result.disponibles} cupos disponibles`
+        });
+      }
 
       return res.status(500).json({ ok: false, error: 'No se pudo generar código de invitación', code: result.code });
     }
@@ -881,7 +911,8 @@ router.post('/profesor/evaluaciones', autorizarRoles('profesor'), async (req, re
   }
 
   try {
-    const profesorUsuario = req.body?.usuario || 'profesor-demo';
+    const profesorUsuario = req.headers['x-user-name'];
+    if (!profesorUsuario) return res.status(401).json({ ok: false, error: 'Profesor no autenticado' });
     const result = await crearEvaluacionConPreguntas({
       titulo,
       curso,
@@ -916,6 +947,40 @@ router.get('/profesor/evaluaciones', autorizarRoles('profesor'), async (req, res
     return res.json({ ok: true, data });
   } catch (error) {
     return res.status(500).json({ ok: false, error: 'No se pudieron listar las evaluaciones', message: error.message });
+  }
+});
+
+router.patch('/profesor/evaluaciones/:id/publicacion', autorizarRoles('profesor'), async (req, res) => {
+  const evaluacionId = Number(req.params.id);
+  const profesorUsuario = req.headers['x-user-name'];
+  const { publicada } = req.body || {};
+  if (!Number.isInteger(evaluacionId) || evaluacionId <= 0 || typeof publicada !== 'boolean' || !profesorUsuario) {
+    return res.status(400).json({ ok: false, error: 'Datos de publicación inválidos' });
+  }
+
+  try {
+    const actualizada = await actualizarPublicacionEvaluacion({ evaluacionId, profesorUsuario, publicada });
+    if (!actualizada) return res.status(404).json({ ok: false, error: 'Evaluación no encontrada' });
+    return res.json({ ok: true, message: publicada ? 'Evaluación publicada' : 'Evaluación retirada' });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No se pudo cambiar la publicación', message: error.message });
+  }
+});
+
+router.delete('/profesor/evaluaciones/:id', autorizarRoles('profesor'), async (req, res) => {
+  const evaluacionId = Number(req.params.id);
+  const profesorUsuario = req.headers['x-user-name'];
+  if (!Number.isInteger(evaluacionId) || evaluacionId <= 0 || !profesorUsuario) {
+    return res.status(400).json({ ok: false, error: 'Datos de evaluación inválidos' });
+  }
+
+  try {
+    const result = await eliminarEvaluacion({ evaluacionId, profesorUsuario });
+    if (result.code === 'EVALUACION_NO_ENCONTRADA') return res.status(404).json({ ok: false, error: 'Evaluación no encontrada' });
+    if (result.code === 'EVALUACION_CON_INTENTOS') return res.status(409).json({ ok: false, error: 'No se puede eliminar una evaluación que ya tiene intentos' });
+    return res.json({ ok: true, message: 'Evaluación eliminada' });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No se pudo eliminar la evaluación', message: error.message });
   }
 });
 
@@ -1087,6 +1152,7 @@ router.post('/alumno/evaluaciones/:id/intentos', autorizarRoles('alumno'), async
     if (!result.ok) {
       if (result.code === 'ALUMNO_NO_ENCONTRADO') return res.status(404).json({ ok: false, error: 'Alumno no encontrado' });
       if (result.code === 'EVALUACION_NO_ENCONTRADA') return res.status(404).json({ ok: false, error: 'Evaluación no encontrada' });
+      if (result.code === 'EVALUACION_NO_PUBLICADA') return res.status(404).json({ ok: false, error: 'Evaluación no publicada' });
       if (result.code === 'ALUMNO_NO_ACTIVO') return res.status(403).json({ ok: false, error: 'Alumno inactivo o bloqueado' });
       if (result.code === 'ALUMNO_NO_MATRICULADO') return res.status(403).json({ ok: false, error: 'El alumno no está inscrito en este curso' });
       if (result.code === 'BANCO_INSUFICIENTE') return res.status(409).json({ ok: false, error: 'La evaluación no tiene suficientes preguntas', disponibles: result.disponibles, requeridas: result.requeridas });
@@ -1164,6 +1230,34 @@ router.get('/alumno/intentos/:intentoId', autorizarRoles('alumno'), async (req, 
     return res.json({ ok: true, data });
   } catch (error) {
     return res.status(500).json({ ok: false, error: 'No se pudo obtener detalle del intento', message: error.message });
+  }
+});
+
+router.post('/alumno/intentos/:intentoId/cancelar', autorizarRoles('alumno'), async (req, res) => {
+  const intentoId = Number(req.params.intentoId);
+  const alumnoUsuario = req.user?.usuario || req.headers['x-user-name'];
+
+  if (!Number.isInteger(intentoId) || intentoId <= 0) {
+    return res.status(400).json({ ok: false, error: 'ID de intento inválido' });
+  }
+  if (!alumnoUsuario) {
+    return res.status(401).json({ ok: false, error: 'Alumno no autenticado' });
+  }
+
+  try {
+    const result = await cancelarIntentoAlumno({ intentoId, alumnoUsuario });
+    if (!result.ok) {
+      if (result.code === 'ALUMNO_NO_ENCONTRADO' || result.code === 'INTENTO_NO_ENCONTRADO') {
+        return res.status(404).json({ ok: false, error: 'Intento no encontrado' });
+      }
+      if (result.code === 'INTENTO_NO_CANCELABLE' || result.code === 'INTENTO_CON_RESPUESTAS') {
+        return res.status(409).json({ ok: false, error: 'El intento ya no se puede cancelar' });
+      }
+      return res.status(400).json({ ok: false, error: 'No se pudo cancelar el intento', code: result.code });
+    }
+    return res.json({ ok: true, message: 'Intento cancelado', intentoId });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No se pudo cancelar el intento', message: error.message });
   }
 });
 
@@ -1258,7 +1352,8 @@ router.post('/alumno/invitaciones/canjear', autorizarRoles('alumno'), async (req
 });
 
 router.post('/profesor/tareas', autorizarRoles('profesor'), async (req, res) => {
-  const { titulo, descripcion, curso, profesorUsuario, fechaVencimiento } = req.body || {};
+  const { titulo, descripcion, curso, fechaVencimiento } = req.body || {};
+  const profesorUsuario = req.headers['x-user-name'];
 
   if (!titulo || !curso || !profesorUsuario) {
     return res.status(400).json({ ok: false, error: 'Faltan datos para crear la tarea' });
@@ -1284,6 +1379,39 @@ router.get('/profesor/tareas', autorizarRoles('profesor'), async (req, res) => {
     return res.json({ ok: true, total: data.length, data });
   } catch (error) {
     return res.status(500).json({ ok: false, error: 'No se pudieron obtener tareas del profesor', message: error.message });
+  }
+});
+
+router.patch('/profesor/tareas/:id/publicacion', autorizarRoles('profesor'), async (req, res) => {
+  const tareaId = Number(req.params.id);
+  const profesorUsuario = req.headers['x-user-name'];
+  const { publicada } = req.body || {};
+  if (!Number.isInteger(tareaId) || tareaId <= 0 || typeof publicada !== 'boolean' || !profesorUsuario) {
+    return res.status(400).json({ ok: false, error: 'Datos de publicación inválidos' });
+  }
+
+  try {
+    const actualizada = await actualizarPublicacionTarea({ tareaId, profesorUsuario, publicada });
+    if (!actualizada) return res.status(404).json({ ok: false, error: 'Tarea no encontrada' });
+    return res.json({ ok: true, message: publicada ? 'Tarea publicada' : 'Tarea retirada' });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No se pudo cambiar la publicación', message: error.message });
+  }
+});
+
+router.delete('/profesor/tareas/:id', autorizarRoles('profesor'), async (req, res) => {
+  const tareaId = Number(req.params.id);
+  const profesorUsuario = req.headers['x-user-name'];
+  if (!Number.isInteger(tareaId) || tareaId <= 0 || !profesorUsuario) {
+    return res.status(400).json({ ok: false, error: 'Datos de tarea inválidos' });
+  }
+
+  try {
+    const eliminada = await eliminarTarea({ tareaId, profesorUsuario });
+    if (!eliminada) return res.status(404).json({ ok: false, error: 'Tarea no encontrada' });
+    return res.json({ ok: true, message: 'Tarea eliminada' });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No se pudo eliminar la tarea', message: error.message });
   }
 });
 

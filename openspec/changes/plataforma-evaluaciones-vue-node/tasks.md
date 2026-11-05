@@ -75,7 +75,7 @@
 
 - [x] 10.1 Agregar el tipo `evaluacion` / `examen_final` al modelo, migrar registros existentes como evaluaciones regulares y validar el tipo al crear o actualizar.
 - [x] 10.2 Permitir al profesor consultar y cambiar unicamente la categoria de evaluaciones propias, incluso si ya tienen intentos, sin modificar su historial.
-- [x] 10.3 Separar la navegacion y el listado del alumno en Evaluaciones y Examenes finales, manteniendo el flujo de iniciar, responder y enviar en ambas vistas.
+- [x] 10.3 Diferenciar Evaluaciones regulares y Examenes finales mediante subsecciones dentro de una sola entrada Evaluaciones, manteniendo el flujo de iniciar, responder y enviar.
 - [x] 10.4 Calcular la nota de cada intento enviado sobre 10 segun el puntaje maximo seleccionado y mostrar el promedio de todos los intentos completados por categoria; excluir intentos sin enviar.
 - [ ] 10.5 Verificar migracion, aislamiento por rol/propiedad, clasificacion, flujo por categoria, promedios y estados vacios con pruebas disponibles.
 
@@ -94,9 +94,28 @@
 
 ## 13. Catalogo academico persistente
 
-- [ ] 13.1 Crear tablas `Curso`, `OfertaCurso`, `Clase` y `MatriculaOferta`, con migraciones idempotentes y sin sembrar los conteos ficticios actuales.
-- [ ] 13.2 Implementar consulta/creacion de ofertas y clases para admin, validar horarios/cupos y calcular inscritos desde matriculas reales.
-- [ ] 13.3 Sustituir `courseOfferings.js` en vistas admin/docente por catalogo obtenido desde API y mostrar estado vacio cuando no haya ofertas.
-- [ ] 13.4 Conectar invitaciones nuevas a ofertas; canjearlas de forma atomica, respetar duplicados/cupo y conservar soporte para invitaciones existentes por `cursos_json`.
-- [ ] 13.5 Registrar `codigo_legacy` por clase para mantener compatibilidad temporal con tareas/evaluaciones y `UsuarioCurso`.
+- [x] 13.1 Crear tablas `Curso`, `OfertaCurso`, `Clase` y `MatriculaOferta`, con migraciones idempotentes y sin sembrar los conteos ficticios actuales.
+- [x] 13.2 Implementar consulta/creacion de ofertas y clases para admin, validar horarios/cupos y calcular inscritos desde matriculas reales.
+- [x] 13.3 Sustituir `courseOfferings.js` en vistas admin/docente por catalogo obtenido desde API y mostrar estado vacio cuando no haya ofertas.
+- [x] 13.4 Conectar invitaciones nuevas a ofertas; canjearlas de forma atomica, respetar duplicados/cupo y conservar soporte para invitaciones existentes por `cursos_json`.
+- [x] 13.5 Registrar `codigo_legacy` por clase para mantener compatibilidad temporal con tareas/evaluaciones y `UsuarioCurso`.
 - [ ] 13.6 Verificar manualmente alta, listado, carga de clases, canje, cupo y conteo de matriculas en una base de pruebas MySQL.
+
+## 14. Ciclo de vida y cancelacion de intentos
+
+- [x] 14.1 Persistir los estados `en_progreso`, `completado` y `cancelado`, y migrar intentos existentes segun sus respuestas guardadas.
+- [x] 14.2 Crear la ruta de cancelacion con validacion de propiedad/estado y rechazar envios de intentos cancelados o completados.
+- [x] 14.3 Cancelar al cambiar de seccion, ocultar la pestana o abandonar la pagina; mantener visibles los avisos y abrir el historial por un boton flotante.
+- [ ] 14.4 Verificar manualmente cancelacion, bloqueo de envio, historial y promedio en una base de pruebas y navegador.
+
+## 15. Navegacion del alumno
+
+- [x] 15.1 Reunir Evaluaciones regulares y Examenes finales bajo una sola entrada con selector interno de categoria.
+- [x] 15.2 Mover Material del curso y Horarios a subsecciones dentro de Cursos.
+- [x] 15.3 Agregar la seccion Tareas y conectarla con las tareas publicadas de los cursos inscritos.
+- [ ] 15.4 Verificar manualmente navegacion, carga de tareas y adaptacion responsive en navegador.
+
+## 16. Migraciones de esquema y arranque backend
+
+- [ ] 16.1 Extraer las modificaciones de esquema de `index.js` a migraciones versionadas y reconciliarlas con `backend/db/schema.sql` para evitar definiciones duplicadas.
+- [ ] 16.2 Ejecutar migraciones antes de abrir el puerto y detener el arranque si alguna migracion falla.

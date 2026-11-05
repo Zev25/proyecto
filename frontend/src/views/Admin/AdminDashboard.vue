@@ -10,6 +10,7 @@ const emit = defineEmits(['logout']);
 const activeSection = ref('overview');
 const summary = ref(null);
 const users = ref([]);
+const profesores = ref([]);
 const ofertas = ref([]);
 const cargandoOfertas = ref(false);
 const searchText = ref('');
@@ -21,6 +22,7 @@ const invitacionCreada = ref(null);
 const codigoCopiado = ref(false);
 const offeringDialogOpen = ref(false);
 const guardandoOferta = ref(false);
+const asignacionesEnCurso = ref({});
 const invitationForm = reactive({
   ofertaIds: [],
   expiraEnHoras: 24,
@@ -45,13 +47,43 @@ const navItems = [
 ];
 
 const sectionTitle = computed(() => navItems.find((item) => item.key === activeSection.value)?.label || 'Resumen');
+const diasSemana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+const horariosTurno = computed(() => {
+  if (!nuevaOferta.horaInicio || !nuevaOferta.horaFin) return [];
+
+  const aMinutos = (hora) => {
+    const [horas, minutos] = hora.split(':').map(Number);
+    return horas * 60 + minutos;
+  };
+  const inicio = aMinutos(nuevaOferta.horaInicio);
+  const fin = aMinutos(nuevaOferta.horaFin);
+  if (inicio >= fin) return [];
+
+  const opciones = new Set([inicio, fin]);
+  for (let minutos = inicio + 30; minutos < fin; minutos += 30) opciones.add(minutos);
+
+  return [...opciones].sort((a, b) => a - b).map((minutos) => {
+    const hora = Math.floor(minutos / 60);
+    const minuto = minutos % 60;
+    const hora12 = hora % 12 || 12;
+    const periodo = hora < 12 ? 'a. m.' : 'p. m.';
+    return {
+      value: `${String(hora).padStart(2, '0')}:${String(minuto).padStart(2, '0')}`,
+      label: `${hora12}:${String(minuto).padStart(2, '0')} ${periodo}`
+    };
+  });
+});
+
+const opcionesFinClase = (clase) => horariosTurno.value.filter((hora) => (
+  !clase.horaInicio || hora.value > clase.horaInicio
+));
 
 const abrirFormularioOferta = () => {
   offeringDialogOpen.value = true;
 };
 
 const agregarClaseOferta = () => {
-  nuevasClases.value.push({ materia: '', nombre: '', modalidad: 'semanal', horario: '', codigoLegacy: '' });
+  nuevasClases.value.push({ materia: '', nombre: '', modalidad: 'semanal', dia: '', horaInicio: '', horaFin: '', codigoLegacy: '' });
 };
 
 const quitarClaseOferta = (index) => {
@@ -74,22 +106,57 @@ const requestJson = async (url) => {
 
 const cargarDatos = async () => {
   loading.value = true;
+  cargandoOfertas.value = true;
   loadError.value = '';
 
   try {
-    const [resumenResult, usuariosResult, ofertasResult] = await Promise.all([
+    const [resumenResult, usuariosResult, profesoresResult, ofertasResult] = await Promise.all([
       requestJson('http://localhost:3000/admin/resumen'),
       requestJson('http://localhost:3000/admin/usuarios?tipo=alumno'),
+      requestJson('http://localhost:3000/admin/usuarios?tipo=profesor'),
       requestJson('http://localhost:3000/admin/ofertas')
     ]);
 
     summary.value = resumenResult.data;
     users.value = usuariosResult.data || [];
+    profesores.value = (profesoresResult.data || []).filter((profesor) => profesor.estado === 'activo');
     ofertas.value = ofertasResult.data || [];
   } catch (error) {
     loadError.value = error.message;
   } finally {
     loading.value = false;
+    cargandoOfertas.value = false;
+  }
+};
+
+const actualizarProfesorClase = async (clase, profesorUsuario) => {
+  if (!Number.isInteger(Number(clase?.id)) || Number(clase.id) < 1) {
+    loadError.value = 'La clase no incluye su identificador. Reinicia el backend y vuelve a cargar la página.';
+    return;
+  }
+
+  asignacionesEnCurso.value = { ...asignacionesEnCurso.value, [clase.id]: true };
+  loadError.value = '';
+
+  try {
+    const response = await fetch(`http://localhost:3000/admin/clases/${clase.id}/profesor`, {
+      method: 'PATCH',
+      headers: { ...adminHeaders.value, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profesorUsuario: profesorUsuario || null })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'No se pudo asignar el profesor');
+
+    const profesor = profesores.value.find((item) => item.usuario === profesorUsuario);
+    clase.profesorUsuario = profesor?.usuario || '';
+    clase.profesorNombre = profesor ? `${profesor.nombre} ${profesor.apellido}`.trim() : '';
+  } catch (error) {
+    loadError.value = error.message;
+    await cargarDatos();
+  } finally {
+    const asignaciones = { ...asignacionesEnCurso.value };
+    delete asignaciones[clase.id];
+    asignacionesEnCurso.value = asignaciones;
   }
 };
 
@@ -106,7 +173,12 @@ const crearOferta = async () => {
       },
       body: JSON.stringify({
         ...nuevaOferta,
-        clases: nuevasClases.value
+        clases: nuevasClases.value.map((clase) => ({
+          ...clase,
+          horario: clase.modalidad === 'semanal'
+            ? `${clase.dia} ${clase.horaInicio}–${clase.horaFin}`
+            : ''
+        }))
       })
     });
     const result = await response.json();
@@ -117,7 +189,7 @@ const crearOferta = async () => {
     nuevaOferta.horaInicio = '';
     nuevaOferta.horaFin = '';
     nuevaOferta.cupoMaximo = '';
-    nuevasClases.value = [{ materia: '', nombre: '', modalidad: 'semanal', horario: '', codigoLegacy: '' }];
+    nuevasClases.value = [{ materia: '', nombre: '', modalidad: 'semanal', dia: '', horaInicio: '', horaFin: '', codigoLegacy: '' }];
     offeringDialogOpen.value = false;
     await cargarDatos();
   } catch (error) {
@@ -448,9 +520,17 @@ onMounted(cargarDatos);
                   </label>
                   <label class="admin-dialog__field">Nombre de clase<input v-model="clase.nombre" type="text" placeholder="Ej. 1A Frontend" required /></label>
                   <label class="admin-dialog__field">Modalidad<select v-model="clase.modalidad"><option value="semanal">Horario semanal</option><option value="entregas">Por entregas</option></select></label>
-                  <label v-if="clase.modalidad === 'semanal'" class="admin-dialog__field admin-class-row__schedule">Horario de clase<input v-model="clase.horario" type="text" placeholder="Ej. Martes 15:00–17:00" required /></label>
+                  <label v-if="clase.modalidad === 'semanal'" class="admin-dialog__field">Día
+                    <select v-model="clase.dia" required><option disabled value="">Seleccionar</option><option v-for="dia in diasSemana" :key="dia" :value="dia">{{ dia }}</option></select>
+                  </label>
+                  <label v-if="clase.modalidad === 'semanal'" class="admin-dialog__field">Hora de inicio
+                    <select v-model="clase.horaInicio" required @change="clase.horaFin = ''"><option disabled value="">Seleccionar</option><option v-for="hora in horariosTurno" :key="hora.value" :value="hora.value">{{ hora.label }}</option></select>
+                  </label>
+                  <label v-if="clase.modalidad === 'semanal'" class="admin-dialog__field">Hora de fin
+                    <select v-model="clase.horaFin" required><option disabled value="">Seleccionar</option><option v-for="hora in opcionesFinClase(clase)" :key="hora.value" :value="hora.value">{{ hora.label }}</option></select>
+                  </label>
                   <div v-else class="admin-class-row__async">Sin horario fijo · organizado por entregas</div>
-                  <label class="admin-dialog__field">Código legacy (opcional)<input v-model="clase.codigoLegacy" type="text" maxlength="100" placeholder="Ej. frontend" /></label>
+                  <label class="admin-dialog__field">Código para actividades<input v-model="clase.codigoLegacy" type="text" maxlength="100" placeholder="Ej. frontend" required /></label>
                   <button class="admin-row-action is-danger" type="button" :disabled="nuevasClases.length === 1" aria-label="Quitar materia" @click="quitarClaseOferta(index)">Quitar</button>
                 </div>
               </section>
@@ -477,8 +557,21 @@ onMounted(cargarDatos);
                       <td>{{ offering.course }}<small class="table-subtext">{{ offering.shift }}</small></td>
                       <td><strong>{{ item.subject }}</strong><small class="table-subtext">{{ item.name }}</small></td>
                       <td>{{ item.schedule }}</td>
-                      <td><span class="unassigned-label">Sin asignar</span></td>
-                      <td><button class="admin-row-action" type="button" disabled>Asignar</button></td>
+                      <td>{{ item.profesorNombre || 'Sin asignar' }}</td>
+                      <td>
+                        <select
+                          class="admin-teacher-select"
+                          :value="item.profesorUsuario"
+                          :disabled="asignacionesEnCurso[item.id]"
+                          :aria-label="`Profesor de ${item.name}`"
+                          @change="actualizarProfesorClase(item, $event.target.value)"
+                        >
+                          <option value="">Sin asignar</option>
+                          <option v-for="profesor in profesores" :key="profesor.id" :value="profesor.usuario">
+                            {{ profesor.nombre }} {{ profesor.apellido }} · {{ profesor.usuario }}
+                          </option>
+                        </select>
+                      </td>
                     </tr>
                   </template>
                   <tr v-if="!ofertas.length"><td colspan="5" class="admin-empty">No hay ofertas con clases.</td></tr>
@@ -778,7 +871,7 @@ onMounted(cargarDatos);
 .admin-offering-fields { display: grid; grid-template-columns: minmax(200px, 2fr) repeat(4, minmax(95px, 1fr)); gap: 0.7rem; }
 .admin-dialog__field { min-width: 0; display: block; color: #56655d; font-size: 0.69rem; font-weight: 650; }
 .admin-dialog__field input, .admin-dialog__field select { min-height: 38px; margin: 0.35rem 0 0; padding: 0.45rem 0.55rem; border: 1px solid #dfe5e0; border-radius: 3px; background: #fcfdfc; color: #3e4d44; font-size: 0.72rem; }
-.admin-class-row { display: grid; grid-template-columns: 1.1fr 1fr 1.05fr 1.3fr auto; align-items: end; gap: 0.55rem; padding: 0.65rem 0; border-top: 1px solid #f0f2f0; }
+.admin-class-row { display: grid; grid-template-columns: 1.1fr 1fr 1fr 0.85fr 0.9fr 0.9fr 1fr auto; align-items: end; gap: 0.55rem; padding: 0.65rem 0; border-top: 1px solid #f0f2f0; }
 .admin-class-row__async { align-self: center; color: #77847c; font-size: 0.68rem; }
 .admin-class-row > .admin-row-action { margin-bottom: 0.35rem; }
 .admin-dialog__notice { display: flex; align-items: center; gap: 0.5rem; padding: 0.85rem 0; color: #738178; font-size: 0.7rem; }
@@ -821,7 +914,7 @@ onMounted(cargarDatos);
   .admin-offering-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-offering-fields__course { grid-column: 1 / -1; }
   .admin-class-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .admin-class-row__schedule, .admin-class-row__async { grid-column: 1 / -1; }
+  .admin-class-row__async { grid-column: 1 / -1; }
   .admin-class-row > .admin-row-action { justify-self: start; }
 }
 </style>

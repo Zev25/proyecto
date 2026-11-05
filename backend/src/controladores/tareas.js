@@ -5,8 +5,8 @@ const crearTarea = async ({ titulo, descripcion, curso, profesorUsuario, fechaVe
 
   try {
     const [result] = await connection.query(
-      `INSERT INTO Tarea (titulo, descripcion, curso, profesor_usuario, fecha_vencimiento)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO Tarea (titulo, descripcion, curso, profesor_usuario, fecha_vencimiento, publicada)
+       VALUES (?, ?, ?, ?, ?, 0)`,
       [titulo, descripcion, curso, profesorUsuario, fechaVencimiento || null]
     );
 
@@ -21,9 +21,10 @@ const listarTareasPorCurso = async (curso) => {
 
   try {
     const [rows] = await connection.query(
-      `SELECT id, titulo, descripcion, curso, profesor_usuario, fecha_vencimiento, creada_en
+      `SELECT id, titulo, descripcion, curso, profesor_usuario, fecha_vencimiento, creada_en, publicada
        FROM Tarea
        WHERE curso = ?
+        AND publicada = 1
        ORDER BY id DESC`,
       [curso]
     );
@@ -39,7 +40,7 @@ const listarTareasPorProfesor = async (profesorUsuario) => {
 
   try {
     const [rows] = await connection.query(
-      `SELECT id, titulo, descripcion, curso, profesor_usuario, fecha_vencimiento, creada_en
+      `SELECT id, titulo, descripcion, curso, profesor_usuario, fecha_vencimiento, creada_en, publicada
        FROM Tarea
        WHERE profesor_usuario = ?
        ORDER BY id DESC`,
@@ -52,4 +53,32 @@ const listarTareasPorProfesor = async (profesorUsuario) => {
   }
 };
 
-export { crearTarea, listarTareasPorCurso, listarTareasPorProfesor };
+const actualizarPublicacionTarea = async ({ tareaId, profesorUsuario, publicada }) => {
+  const connection = await conexion.getConnection();
+
+  try {
+    const [result] = await connection.query(
+      'UPDATE Tarea SET publicada = ? WHERE id = ? AND profesor_usuario = ?',
+      [publicada ? 1 : 0, tareaId, profesorUsuario]
+    );
+    return result.affectedRows > 0;
+  } finally {
+    connection.release();
+  }
+};
+
+const eliminarTarea = async ({ tareaId, profesorUsuario }) => {
+  const connection = await conexion.getConnection();
+
+  try {
+    const [result] = await connection.query(
+      'DELETE FROM Tarea WHERE id = ? AND profesor_usuario = ?',
+      [tareaId, profesorUsuario]
+    );
+    return result.affectedRows > 0;
+  } finally {
+    connection.release();
+  }
+};
+
+export { actualizarPublicacionTarea, crearTarea, eliminarTarea, listarTareasPorCurso, listarTareasPorProfesor };

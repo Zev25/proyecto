@@ -4,7 +4,6 @@ import { autorizarRoles } from './middleware/autorizarRoles.js';
 import { cargarExcelEvaluacion } from './middleware/multerExcel.js';
 import { parsearPreguntasExcel } from './servicios/evaluacionesExcel.js';
 
-// Controladores de acceso y usuarios
 import { loginUsuario } from './controladores/auth.js';
 import { buscarUsuarioPorUsuario } from './controladores/admin.js';
 import {
@@ -14,7 +13,7 @@ import {
   obtenerUsuarios
 } from './controladores/usuarios.js';
 
-// Controladores de profesor y alumno
+
 import {
   actualizarPublicacionEvaluacion,
   crearEvaluacionConPreguntas,
@@ -30,6 +29,7 @@ import {
   verIntentosProfesor,
   verDetalleIntento
 } from './controladores/evaluaciones.js';
+
 import {
   actualizarPublicacionTarea,
   crearTarea,
@@ -37,6 +37,7 @@ import {
   listarTareasPorCurso,
   listarTareasPorProfesor
 } from './controladores/tareas.js';
+
 import {
   obtenerCursosAlumnoPorUsuario,
   obtenerResumenAlumno,
@@ -45,7 +46,7 @@ import {
   verDetalleIntentoAlumno
 } from './controladores/alumno.js';
 
-// Controladores de administracion
+
 import {
   actualizarCursoUsuarioAdmin,
   actualizarEstadoUsuarioAdmin,
@@ -58,10 +59,12 @@ import {
   obtenerResumenAdmin,
   obtenerResumenCursosAdmin,
 } from './controladores/adminPanel.js';
+
 import {
   canjearInvitacionCursoAlumno,
   crearInvitacionCursoAdmin
 } from './controladores/invitaciones.js';
+
 import { asignarProfesorAClase, crearOfertaAcademica, listarOfertasAcademicas, listarOfertasAlumno } from './controladores/ofertas.js';
 
 const fechaIsoValida = (fecha) => {
@@ -898,8 +901,6 @@ router.get('/panel-admin', autorizarRoles('admin'), (req, res) => {
 
 
 
-// rutas para evaluaciones
-
 router.post('/profesor/evaluaciones', autorizarRoles('profesor'), async (req, res) => {
   const { titulo, curso, preguntas, preguntasPorIntento, fechaFin, categoria } = req.body || {};
 
@@ -1077,7 +1078,7 @@ router.post('/profesor/evaluaciones/importar-excel', autorizarRoles('profesor'),
       return res.status(400).json({ ok: false, error: 'Debes adjuntar un archivo .xlsx en el campo archivo' });
     }
 
-    try {
+    try {cargarExcelEvaluacion
       const preguntas = await parsearPreguntasExcel(req.file.buffer);
 
       return res.status(200).json({

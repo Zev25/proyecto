@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: proyecto-dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - PORT=3000
+      # Si tu backend necesita hablar con Ollama en el servidor a través de Tailscale:
+      - OLLAMA_HOST=http://100.104.15.124:11434
+    restart: unless-stopped

@@ -82,6 +82,18 @@
 - Se registra como deuda tecnica que `index.js` mezcla el registro de rutas con una migracion de esquema extensa y sentencias DDL que se solapan con `backend/db/schema.sql`.
 - A futuro se reemplazara la migracion inline por migraciones versionadas, se conciliara el esquema snapshot para evitar duplicados y se ordenara el arranque para que la API escuche solo despues de migraciones exitosas. Las tareas 16.1 y 16.2 quedan pendientes; no se cambia ahora el comportamiento del backend.
 
+## 2026-11-06
+
+- Se reorganiza `backend/src/controladores/` en subcarpetas por dominio. Los archivos mixtos `adminPanel`, `alumno` y `evaluaciones` se reparten por tema; los intentos del alumno pasan a su propia carpeta `intentos/`. Cada funcion se movio sin cambios y se comprobo por hash.
+- El registro tiene su propio controlador (`auth/registro.js`), separado del login. El controlador valida y devuelve codigos de resultado; el handler HTTP solo los traduce a respuestas.
+- Se decide que las rutas solo llamen a la funcion que las atiende: los 49 handlers `(req, res)` pasan a un `controlador.js` por dominio e `index.js` queda como lista de rutas (de 1441 a 130 lineas). Se comprobo que metodos, rutas y roles son los mismos y que los cuerpos de los handlers no cambiaron.
+- Se extraen de `index.js` la validacion de fechas, la configuracion de Multer para Excel y la migracion de esquema. Se conserva el comportamiento anterior: la migracion se sigue ejecutando desde `index.js` y `config.js` sigue abriendo el puerto al importarse, por decision expresa de no tocarlo. Las tareas 16.1 y 16.2 siguen pendientes.
+- Se corrige un fallo detectado durante la reorganizacion: `ROLES_VALIDOS` se usaba en el cambio de rol sin estar importada.
+- Se verificaron las rutas con el servidor en ejecucion (tarea 17.7): 69 comprobaciones de lectura y de rechazo de entradas invalidas contra MySQL local, todas correctas. Incluyen la correccion de `ROLES_VALIDOS`, Multer, el parser de Excel y el preflight de CORS desde el frontend. No se escribieron datos: el total de usuarios no cambio. Quedan sin probar con servidor los flujos que escriben (tarea 17.8).
+- Seguridad: se decide que el contrato de sesion sera un JWT firmado, enviado en `Authorization: Bearer`. Se deja preparado y sin integrar: firma y verificacion con algoritmo fijado (HS256), emisor y audiencia, expiracion de 1 hora por defecto, y un middleware `autenticar` que establece `req.user` solo desde un token verificado. `autorizarRoles` ya consulta `req.user` primero, por lo que la integracion futura no obliga a modificarlo. Ninguna ruta ni el login lo usan todavia.
+- El secreto (`JWT_SECRET`, minimo 32 caracteres) se lee al firmar o verificar, no al importar, para que el backend actual siga arrancando sin el. Las variables se declaran en `.env.example` y no se escribio ningun secreto en el repositorio.
+- Pendiente de decision antes de integrar: donde guarda el frontend el token (cabecera Bearer desde memoria o cookie `httpOnly`, esta ultima con proteccion CSRF) y si habra token de renovacion. Pendientes tambien el hash de contrasenas y el resto del plan de seguridad (tareas 18.2 a 18.9).
+
 ## Regla de mantenimiento
 
 - Registrar nuevas decisiones por fecha, indicando contexto breve y efecto en alcance, diseno o tareas.

@@ -1,4 +1,4 @@
-import { conexion } from '../db.js';
+import { conexion } from '../../db.js';
 
 const buscarUsuarioPorUsuario = async (usuarioBuscado = '') => {
     const connection = await conexion.getConnection();

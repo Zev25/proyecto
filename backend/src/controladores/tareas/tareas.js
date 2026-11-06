@@ -1,4 +1,4 @@
-import { conexion } from '../db.js';
+import { conexion } from '../../db.js';
 
 const crearTarea = async ({ titulo, descripcion, curso, profesorUsuario, fechaVencimiento }) => {
   const connection = await conexion.getConnection();

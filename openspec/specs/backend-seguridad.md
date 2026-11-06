@@ -117,3 +117,26 @@ Alcance: archivos fuente de `backend/src`, `frontend/src`, esquema SQL, paquetes
 
 ## Idea futura: base de datos online
 - Se reconsiderara despues de la presentacion. Hasta entonces, el sistema sigue usando la configuracion MySQL actual; no hay proveedor ni conexion remota que mantener.
+
+## Actualizacion 2026-11-06
+
+### Preparado, sin integrar
+- Existe un modulo JWT en `backend/src/seguridad/` (`configJwt.js`, `jwt.js`) y un middleware `backend/src/middleware/autenticar.js`. Ninguna ruta, ni `POST /login`, los usa; el comportamiento de autenticacion descrito arriba sigue vigente y los riesgos P0/P1 no estan resueltos.
+- Diseno: HS256 con algoritmo fijado en la verificacion, emisor y audiencia comprobados, expiracion de 1 hora por defecto y payload limitado a `sub` (id), `usuario` y `tipo`. El secreto `JWT_SECRET` exige al menos 32 caracteres y se lee al firmar o verificar, no al importar el modulo.
+- `autenticar` lee `Authorization: Bearer`, responde `401` si falta, es invalido o expiro, y establece `req.user` solo desde un token verificado. `autorizarRoles` ya consulta `req.user.tipo` antes que los headers, por lo que no requiere cambios para consumirlo.
+- Pruebas aisladas realizadas (sin servidor ni base de datos): ida y vuelta, token manipulado, firma con otro secreto, `alg: none`, otro algoritmo, emisor y audiencia incorrectos, token expirado, secreto ausente o corto y comportamiento del middleware. No hay pruebas de integracion con las rutas porque aun no esta conectado.
+
+### Capas previstas para produccion
+1. Contrasenas con Argon2id o bcrypt.
+2. JWT emitido en el login y verificado con `autenticar` antes de `autorizarRoles`; retirar los roles declarados por el cliente.
+3. Identidad de las operaciones tomada de `req.user`.
+4. `helmet` para cabeceras HTTP seguras.
+5. Limite de intentos en login y canje de invitaciones.
+6. CORS configurado por entorno.
+7. Validacion de entradas con esquemas, limite del body y manejador de errores central que no exponga `error.message`.
+8. HTTPS en despliegue, cuenta MySQL con minimos privilegios y revision periodica de dependencias.
+
+### Decisiones pendientes antes de integrar
+- Donde guarda el frontend el token: cabecera `Bearer` desde memoria (simple, sensible a XSS) o cookie `httpOnly` con `SameSite` y proteccion CSRF.
+- Si habra token de renovacion y como se revocara una sesion (por ejemplo, al bloquear a un usuario). Un JWT de vida corta no se invalida antes de expirar sin un mecanismo adicional.
+- Rotacion del secreto de firma.

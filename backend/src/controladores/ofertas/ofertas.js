@@ -1,4 +1,4 @@
-import { conexion } from '../db.js';
+import { conexion } from '../../db.js';
 
 const MODALIDADES_VALIDAS = new Set(['semanal', 'entregas']);
 const horaValida = (valor) => typeof valor === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(valor);

@@ -1,6 +1,6 @@
 import crypto from 'crypto';
-import { conexion } from '../db.js';
-import { CURSOS_VALIDOS } from './adminPanel.js';
+import { conexion } from '../../db.js';
+import { CURSOS_VALIDOS } from '../admin/constantes.js';
 
 const DIGITOS_CODIGO = 8;
 

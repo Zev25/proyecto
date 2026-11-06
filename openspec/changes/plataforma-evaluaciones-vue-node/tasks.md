@@ -119,3 +119,26 @@
 
 - [ ] 16.1 Extraer las modificaciones de esquema de `index.js` a migraciones versionadas y reconciliarlas con `backend/db/schema.sql` para evitar definiciones duplicadas.
 - [ ] 16.2 Ejecutar migraciones antes de abrir el puerto y detener el arranque si alguna migracion falla.
+
+## 17. Reorganizacion del backend por dominios
+
+- [x] 17.1 Organizar `backend/src/controladores/` en subcarpetas por dominio (`admin`, `alumno`, `auth`, `evaluaciones`, `intentos`, `invitaciones`, `ofertas`, `tareas`, `usuarios`, `sistema`) y repartir `adminPanel`, `alumno` y `evaluaciones` en archivos por tema, verificando por hash que cada funcion no cambio.
+- [x] 17.2 Crear el controlador de registro (`auth/registro.js`) con validacion, normalizacion y deteccion de duplicados, separado del de login.
+- [x] 17.3 Mover los 49 handlers `(req, res)` a un `controlador.js` por dominio, de modo que `index.js` solo declare rutas y middlewares; verificado que cuerpos, metodos, rutas y roles coinciden con la version anterior.
+- [x] 17.4 Extraer `fechaIsoValida`, la configuracion de Multer para Excel y la migracion de esquema fuera de `index.js`, sin cambiar su comportamiento; la migracion sigue ejecutandose desde `index.js` antes de las rutas.
+- [x] 17.5 Importar `ROLES_VALIDOS` en el cambio de rol de usuarios, que antes fallaba por no estar importado.
+- [ ] 17.6 Repartir las rutas en un archivo por dominio (`rutas.js`) y evaluar rutas por recurso en lugar de por rol.
+- [x] 17.7 Verificar las rutas con el servidor en ejecucion: 69 comprobaciones de lectura y de rechazo de entradas invalidas (roles, validaciones, Multer, parser de Excel, CORS) contra MySQL local, sin escribir datos.
+- [ ] 17.8 Probar con el servidor en ejecucion los flujos que escriben datos (registro exitoso, login con credenciales reales, crear evaluacion, intento completo, canje de invitacion, cambios de rol, curso y estado, importacion de Excel valida), idealmente contra una base de pruebas.
+
+## 18. Seguridad del backend
+
+- [x] 18.1 Preparar JWT sin integrarlo: modulo de firma/verificacion con algoritmo fijado, emisor y audiencia (`seguridad/`), y middleware `autenticar` que establece `req.user` solo desde un token verificado. Variables declaradas en `.env.example`. Verificado con pruebas aisladas (manipulacion, `alg: none`, otro algoritmo, expiracion).
+- [ ] 18.2 Reemplazar contrasenas en texto plano por Argon2id o bcrypt, con migracion compatible con cuentas existentes.
+- [ ] 18.3 Integrar JWT: emitirlo en el login, aplicar `autenticar` antes de `autorizarRoles` y retirar `x-user-role`, `body.tipo` y `query.tipo` como fuente de autoridad.
+- [ ] 18.4 Derivar el usuario de las operaciones desde `req.user` y no aceptar `adminUsuario`, `alumnoUsuario` o `profesorUsuario` enviados por el cliente.
+- [ ] 18.5 Proteger con autenticacion y rol las rutas `/usuarios`, `/usuarios/:id`, `DELETE /usuarios/:id`, `/admin/buscar-usuario` y `/tareas/:curso`; restringir `/db-health`.
+- [ ] 18.6 Forzar el rol `alumno` en el registro publico.
+- [ ] 18.7 Agregar `helmet`, limite de intentos en login y canje de invitaciones, y CORS por entorno.
+- [ ] 18.8 Validar entradas con esquemas, limitar el tamano del body y ocultar `error.message` en respuestas 500 mediante un manejador de errores central.
+- [ ] 18.9 Escribir pruebas de acceso anonimo, rol incorrecto, recursos ajenos, login, rate limit y expiracion de token.

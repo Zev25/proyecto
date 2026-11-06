@@ -1,4 +1,4 @@
-import  { conexion } from '../db.js';
+import { conexion } from '../../db.js';
 
 const loginUsuario = async ({ usuario, contrasena}) => {
     const connection = await conexion.getConnection();
